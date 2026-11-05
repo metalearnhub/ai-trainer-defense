@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://metalearnhub.github.io/ai-trainer-defense/sitemap.xml
