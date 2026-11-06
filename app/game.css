@@ -415,3 +415,6 @@ h1,h2,h3{font-family:var(--fd);margin:0;text-wrap:balance}
 .rv-cta{flex-direction:row;align-items:center;justify-content:space-between;gap:14px;border-color:var(--acc)}
 .rv-cta>div{display:flex;flex-direction:column;gap:4px}
 @media (max-width:640px){.rv-cta{flex-direction:column;align-items:stretch}.rv-leg{display:none}.rvbar{bottom:12px}.rvbar .st{display:none}}
+.rp-trow{width:100%;background:none;border:0;border-bottom:1px solid #EEF0F3;text-align:left;cursor:pointer;font:inherit;color:inherit}
+.rp-trow:hover{background:#F7F8FA}
+.rp-rad.rp-off input{cursor:not-allowed}
