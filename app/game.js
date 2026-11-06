@@ -686,6 +686,7 @@ const box=$('#stagebox'),dv=$('#device');if(!box||!dv)return;
 const bw=box.clientWidth,bh=box.clientHeight;if(!bw||!bh)return;
 const W=bw<700?420:1080;let s=bw/W;if(W>500)s=Math.min(s,bh/640);s=Math.min(s,1.2);
 dv.style.width=W+'px';dv.style.height=(bh/s)+'px';dv.style.transform='scale('+s+')';dv.style.left=Math.max(0,(bw-W*s)/2)+'px';
+if(run&&run.review)rvMark();
 }
 window.addEventListener('resize',fit);
 function renderPane(){
@@ -708,6 +709,7 @@ const keep=rp.querySelector('.rp-main'),top=keep?keep.scrollTop:0,view=rp.datase
 rp.innerHTML='<div class="rp-bar"><span class="rp-dots"><i></i><i></i><i></i></span><span class="rp-url">'+IC.lock+' '+esc(app.url(run.st))+'</span></div><div class="rp-body">'+app.render(run.st)+'</div>'+(tmsg.length?'<div class="rp-toast" role="status">'+esc(tmsg[tmsg.length-1])+'</div>':'');
 rp.classList.toggle('flagging',run.flag);
 const nm=rp.querySelector('.rp-main');if(nm&&view===run.st.view)nm.scrollTop=top;rp.dataset.view=run.st.view;
+if(run.review)rvMark();
 }
 function setPath(o,path,v){const k=path.split('.');let t=o;for(let i=0;i<k.length-1;i++){if(t[k[i]]==null)t[k[i]]={};t=t[k[i]]}t[k[k.length-1]]=v}
 function doAct(name,arg,el){const app=APP(),fn=app.acts[name];if(!fn)return;run.moved=true;const r=fn(run.st,arg,el);if(r!==false)rr()}
@@ -791,6 +793,14 @@ if(t.closest('#dlgNext')){dlgNext();return}
 if(t.closest('#dlgBack')){closeBrief();return}
 if(t.closest('#intro')){$('#intro').hidden=true;return}
 if(!run)return;
+if(run.review){
+ const rf=t.closest('[data-rvf]');if(rf){const inPane=!!rf.closest('#pane');rvFocus(rf.dataset.rvf);if(inPane&&matchMedia('(max-width:900px)').matches)$('#rail').classList.remove('open');return}
+ const rs=t.closest('[data-rvstep]');if(rs){rvStep(+rs.dataset.rvstep);return}
+ const rm=t.closest('[data-rvmode]');if(rm){const id=run.rvFocus;if(rm.dataset.rvmode==='fixed')run.fixed.add(id);else{run.fixed.delete(id);if(run.rvAll){run.rvAll=false;const a=$('#rvAll');a.setAttribute('aria-pressed','false');a.textContent='Show fixed app';a.classList.remove('on')}}rvSync();rr();rvPane();return}
+ if(t.closest('#rvAll')){run.rvAll=!run.rvAll;const a=$('#rvAll');a.setAttribute('aria-pressed',run.rvAll);a.textContent=run.rvAll?'Show as tested':'Show fixed app';a.classList.toggle('on',run.rvAll);if(!run.rvAll)run.fixed.clear();rvSync();rr();rvPane();toast(run.rvAll?'Fixed app: every issue in this task is corrected.':'Back to the build you tested.');return}
+ if(t.closest('#rvReset')){run.st=APP().init();tmsg.length=0;rr();rvPane();toast('App reset to its start screen.');return}
+ if(t.closest('#rvBack')){closeReview();return}
+}
 if(t.closest('#pauseBtn')||t.closest('#resumeBtn')){togglePause();return}
 if(t.closest('#pauseRef')){run.tab='ref';document.querySelectorAll('#rail [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab==='ref'));renderPane();$('#rail').classList.add('open');return}
 if(t.closest('#flagBtn')){setFlag(!run.flag);return}
@@ -800,7 +810,8 @@ if(t.closest('#railClose')){$('#rail').classList.remove('open');return}
 const tb=t.closest('[data-tab]');if(tb&&tb.closest('#rail')){run.tab=tb.dataset.tab;document.querySelectorAll('#rail [data-tab]').forEach(b=>b.setAttribute('aria-selected',b===tb));renderPane();return}
 });
 document.addEventListener('click',e=>{
-if(!run||run.over)return;const rp=$('#rp');if(!rp||!rp.contains(e.target))return;
+if(!run||(run.over&&!run.review))return;const rp=$('#rp');if(!rp||!rp.contains(e.target))return;
+if(e.target.closest('.rv-layer'))return;
 if(run.flag){e.preventDefault();e.stopPropagation();doFlag(e.target);return}
 const a=e.target.closest('[data-act]');if(!a||!rp.contains(a))return;
 if(a.tagName==='FORM'||a.tagName==='INPUT'||a.tagName==='SELECT')return;
@@ -816,6 +827,7 @@ if(!$('#how').hidden){if(e.key==='Escape')$('#how').hidden=true;return}
 if(!$('#assessM').hidden){if(e.key==='Escape')$('#assessM').hidden=true;return}
 if(!$('#rankup').hidden){if(e.key==='Escape'||e.key==='Enter'){e.preventDefault();$('#rankup').hidden=true}return}
 if(e.key==='Enter'&&document.activeElement&&document.activeElement.id==='nameIn'){$('#playBtn').click();return}
+if(run&&run.review&&!$('#mission').hidden){const tg=(document.activeElement&&document.activeElement.tagName)||'';if(['INPUT','SELECT','TEXTAREA'].includes(tg))return;if(e.key==='ArrowRight'){e.preventDefault();rvStep(1)}else if(e.key==='ArrowLeft'){e.preventDefault();rvStep(-1)}else if(e.key==='Escape')closeReview();return}
 if(!run||run.over||$('#mission').hidden)return;
 const tag=(document.activeElement&&document.activeElement.tagName)||'';
 if((e.key==='p'||e.key==='P')&&$('#builder').hidden&&!['INPUT','SELECT','TEXTAREA'].includes(tag)&&!e.metaKey&&!e.ctrlKey){e.preventDefault();togglePause();return}
@@ -969,7 +981,7 @@ if(!run||run.over)return;if(run.paused)togglePause(true);run.over=true;clearInte
 const R=gradeRun(),app=APP(),d=DIFFS[run.diff],prevXP=STORE.xp;
 STORE.xp+=R.xp;STORE.runs.unshift({app:app.name,appId:app.id,task:run.task,code:run.code,title:run.title,target:run.list.length,facc:R.facc,diff:d.t,tier:run.diff,mins:run.mins,grade:R.grade,pct:R.pct,xp:R.xp,found:R.found,trapsOk:R.traps.filter(t=>t.ok).length,date:new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})});STORE.runs=STORE.runs.slice(0,300);
 const qd=[];QUESTS.forEach(q=>{if(!STORE.quests.includes(q.id)&&q.prog(STORE)>=q.goal){STORE.quests.push(q.id);STORE.xp+=q.xp;qd.push(q)}});
-save();LAST={R,app,d,pausedMs:run.pausedMs,pauses:run.pauses,code:run.code,title:run.title,task:run.task,list:run.list,prevXP,mins:run.mins,n:run.n,quests:qd,gain:STORE.xp-prevXP};
+save();LAST={R,app,d,pausedMs:run.pausedMs,pauses:run.pauses,code:run.code,title:run.title,task:run.task,list:run.list,prevXP,mins:run.mins,n:run.n,quests:qd,gain:STORE.xp-prevXP,run};
 renderRank();renderResults();show('results');sfx('SAB'.includes(R.grade)?'win':'lose');if(qd.length)setTimeout(()=>sfx('quest'),900);animXP();
 }
 function animXP(){
@@ -1004,23 +1016,107 @@ $('#results').innerHTML='<div class="rs">'+
 '<div class="xpgain"><b id="xpNum">+0</b><span class="lab">XP</span><div class="xpbar"><i id="xpFill"></i></div><span class="rank-x">'+b.r.t+' · tier ×'+d.mult+(LAST.quests.length?' · quests +'+LAST.quests.reduce((a,q)=>a+q.xp,0):'')+'</span><span class="rankup" id="rankUp" hidden></span></div>'+
 '<div class="kpis"><div class="kpi"><b>'+R.found+'/'+LAST.list.length+'</b><span>findings found</span></div><div class="kpi"><b>'+fmtT(R.used)+'</b><span>time used of '+LAST.mins+':00'+(LAST.pauses?' · paused '+fmtT(LAST.pausedMs/1000):'')+'</span></div><div class="kpi"><b>'+R.facc+'%</b><span>flag accuracy · '+R.ff+' miss'+(R.ff===1?'':'es')+'</span></div><div class="kpi"><b>'+R.jams+(R.revoked?' · 🔒':'')+'</b><span>scanner jams</span></div><div class="kpi"><b>'+R.traps.filter(t=>t.ok).length+'/'+R.traps.length+'</b><span>traps handled</span></div></div></div></section>'+
 '<div class="npcsay">'+npcArt(48)+'<div><span class="who">Vera · Lead Validator</span><p>'+esc((R.jams||R.revoked?'I saw your scanner jam. Prove it on screen first, then flag. ':'')+npcReact(R.grade))+'</p></div></div>'+
+'<div class="fd rv-cta"><div><b>'+(R.misses.length?'See the '+R.misses.length+' issue'+(R.misses.length===1?'':'s')+' you missed, in the app':'Walk through every issue in the app')+'</b><span class="note">Open the same build with every issue marked, step-by-step reproduction, and a view of how it should look when fixed.</span></div><button class="btn pri" id="rvBtn2">Open review</button></div>'+
 (()=>{const A=assess();return A?'<div class="fd"><div class="fd-h"><b>Assessment · '+A.level+' · '+A.score+'</b><span class="pp k">'+A.tasks+'/'+TOTAL_TASKS+' tasks</span></div><span class="note">This task: '+R.found+' of '+LAST.list.length+' findings. Your average across '+A.n+' task run'+(A.n===1?'':'s')+': '+A.avgFound.toFixed(1)+' of '+A.avgTarget.toFixed(1)+' findings per task ('+A.fr+'% find rate), '+A.acc+'% rubric accuracy, '+A.fa+'% flag accuracy.</span></div>':''})()+
 (LAST.quests.length?'<div class="fd"><div class="fd-h"><b>Quest complete</b><span class="pp k" style="color:var(--flag)">+'+LAST.quests.reduce((a,q)=>a+q.xp,0)+' XP</span></div>'+LAST.quests.map(q=>'<span class="note">✓ '+esc(q.t)+' · '+esc(q.d)+'</span>').join('')+'</div>':'')+
 '<div class="tabs rs-tabs" role="tablist">'+tabs.map(([k,l],i)=>'<button role="tab" data-rtab="'+k+'" aria-selected="'+(i===0)+'">'+l+'</button>').join('')+'</div>'+
 '<div class="rs-pane" data-rpane="debrief">'+
 '<section class="coach"><div class="coach-h"><div><span class="lab" style="color:var(--acc)">AI coach · Gemini</span><h3 style="margin-top:6px">Personal debrief, mapped to your guides</h3></div><span class="dstats"><button class="btn" id="copyRep">Copy report</button><button class="btn pri" id="coachBtn">Open coach</button></span></div><p class="note" id="coachNote">Open coach copies your mission report. Paste it into the chat for a graded debrief.</p><textarea id="repTxt" readonly hidden aria-label="Mission report"></textarea><div id="coachFrame"></div></section>'+
 (Object.keys(R.ins).length?'<div class="ins">'+Object.entries(R.ins).map(([g,l])=>'<div class="insc"><b>'+g+'</b><ul>'+l.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>').join('')+'</div>':'<div class="fd"><b>Clean run.</b><span class="note">No rule misses. Try a longer shift or the next tier.</span></div>')+'</div>'+
-'<div class="rs-pane" data-rpane="found" hidden>'+(R.items.length?R.items.map(it=>'<div class="fd"><div class="fd-h"><b>'+esc(it.x.control)+'</b><span class="dstats"><span class="pp k">'+TYPES[it.x.kind].t+'</span><span class="pp '+it.x.prio+'">'+it.x.prio+'</span><span class="pp k">'+it.p+'/100</span><span class="pp k">HUNT #'+it.x.hunt[0]+'</span><span class="pp k">'+fmtT(it.at)+'</span></span></div>'+it.rows.map(frow).join('')+'</div>').join(''):'<p class="note">No findings submitted.</p>')+'</div>'+
-'<div class="rs-pane" data-rpane="missed" hidden>'+(R.misses.length?R.misses.map(x=>'<div class="fd"><div class="fd-h"><b>'+esc(x.page+': '+x.control+' '+(x.kind==='bug'?x.fail:'should '+x.should))+'</b><span class="dstats"><span class="pp k">'+TYPES[x.kind].t+'</span><span class="pp '+x.prio+'">'+x.prio+'</span></span></div><span class="note">'+esc(x.hint)+' · HUNT #'+x.hunt.join(', #')+' · Phase '+String(Math.ceil(x.hunt[0]/10)).padStart(2,'0')+' '+PHASES[Math.ceil(x.hunt[0]/10)-1]+'</span></div>').join(''):'<p class="note">Nothing missed. Every hidden finding was filed.</p>')+'</div>'+
+'<div class="rs-pane" data-rpane="found" hidden>'+(R.items.length?R.items.map(it=>'<div class="fd"><div class="fd-h"><b>'+esc(it.x.control)+'</b><span class="dstats"><span class="pp k">'+TYPES[it.x.kind].t+'</span><span class="pp '+it.x.prio+'">'+it.x.prio+'</span><span class="pp k">'+it.p+'/100</span><span class="pp k">HUNT #'+it.x.hunt[0]+'</span><span class="pp k">'+fmtT(it.at)+'</span></span></div>'+it.rows.map(frow).join('')+'<span><button class="btn sm" data-rvopen="'+it.x.id+'">See it in the app</button></span></div>').join(''):'<p class="note">No findings submitted.</p>')+'</div>'+
+'<div class="rs-pane" data-rpane="missed" hidden>'+(R.misses.length?R.misses.map(x=>'<div class="fd"><div class="fd-h"><b>'+esc(x.page+': '+x.control+' '+(x.kind==='bug'?x.fail:'should '+x.should))+'</b><span class="dstats"><span class="pp k">'+TYPES[x.kind].t+'</span><span class="pp '+x.prio+'">'+x.prio+'</span></span></div><span class="note">'+esc(x.hint)+' · HUNT #'+x.hunt.join(', #')+' · Phase '+String(Math.ceil(x.hunt[0]/10)).padStart(2,'0')+' '+PHASES[Math.ceil(x.hunt[0]/10)-1]+'</span><span><button class="btn sm" data-rvopen="'+x.id+'">Show me where</button></span></div>').join(''):'<p class="note">Nothing missed. Every hidden finding was filed.</p>')+'</div>'+
 '<div class="rs-pane" data-rpane="traps" hidden>'+(R.traps.length?R.traps.map(t=>'<div class="fd"><div class="fd-h"><b>'+esc(t.t.label)+'</b><span class="pp k" style="color:'+(t.ok?'var(--ok)':'var(--bad)')+'">'+(t.ok?'Handled':'Missed the gate')+'</span></div><span class="note">You: '+esc(t.you)+'. '+esc(t.t.why)+' Correct: Don\'t report, Gate '+t.t.gate+'.</span></div>').join(''):'<p class="note">You did not flag any FILTER traps. Each app hides 4: unavailable links, external sites, prerequisites and known limitations.</p>')+'</div>'+
-'<div class="rs-actions"><span class="note">'+(STORE.queue.length?STORE.queue.length+' claimed task'+(STORE.queue.length>1?'s':'')+' left in your queue.':'Replay this task for a new mix, or claim more tasks in the hub.')+'</span><span class="dstats"><button class="btn" id="againBtn">Replay '+LAST.code+'</button><button class="btn'+(STORE.queue.length?'':' pri')+'" id="lobbyBtn">Back to hub</button>'+(STORE.queue.length?'<button class="btn pri" id="nextBtn">Next claimed · '+keyTask(STORE.queue[0]).t.code+'</button>':'')+'</span></div></div>';
+'<div class="rs-actions"><span class="note">'+(STORE.queue.length?STORE.queue.length+' claimed task'+(STORE.queue.length>1?'s':'')+' left in your queue.':'Replay this task for a new mix, or claim more tasks in the hub.')+'</span><span class="dstats"><button class="btn" id="rvBtn">See issues in the app</button><button class="btn" id="againBtn">Replay '+LAST.code+'</button><button class="btn'+(STORE.queue.length?'':' pri')+'" id="lobbyBtn">Back to hub</button>'+(STORE.queue.length?'<button class="btn pri" id="nextBtn">Next claimed · '+keyTask(STORE.queue[0]).t.code+'</button>':'')+'</span></div></div>';
 wireCoach();
 }
 document.addEventListener('click',e=>{
 const rt=e.target.closest('[data-rtab]');if(rt){const k=rt.dataset.rtab;document.querySelectorAll('[data-rtab]').forEach(b=>b.setAttribute('aria-selected',b===rt));document.querySelectorAll('[data-rpane]').forEach(p=>p.hidden=p.dataset.rpane!==k);return}
+const ro=e.target.closest('[data-rvopen]');if(ro){openReview(ro.dataset.rvopen);return}
+if(e.target.closest('#rvBtn')||e.target.closest('#rvBtn2')){openReview();return}
 if(e.target.closest('#againBtn')){pickApp=LAST.app.id;pickTask=LAST.code;run=null;openBrief();return}
 if(e.target.closest('#lobbyBtn')){run=null;renderLobby();show('lobby');return}
 });
+/* ---------- review mode: see every issue in the app ---------- */
+const rvIds=()=>run.list.concat(APP().traps.map(t=>t.id));
+const rvNum=id=>{if(id.charAt(0)==='t'){const i=APP().traps.findIndex(t=>t.id===id);return i<0?'':'T'+(i+1)}const i=run.list.indexOf(id);return i<0?'':String(i+1)};
+const rvItem=id=>LAST.R.items.find(it=>it.x.id===id);
+const rvCls=id=>id.charAt(0)==='t'?'rv-trap':run.logged[id]?'rv-ok':'rv-miss';
+function rvTitle(x){return x.label?x.label:x.control+' '+(x.kind==='bug'?x.fail:'should '+x.should)}
+function rvSync(){run.active=new Set(run.list.filter(id=>!(run.rvAll||run.fixed.has(id))))}
+function openReview(focus){
+const src=LAST.run;if(!src)return;run=src;
+run.review=true;run.flag=false;run.paused=false;run.st=APP().init();run.fixed=new Set();run.rvAll=false;tmsg.length=0;
+run.rvFocus=focus||run.list.find(id=>!run.logged[id])||run.list[0];rvSync();
+renderReview();show('mission');sfx('pick');
+}
+function closeReview(){if(RO)RO.disconnect();run.review=false;run=null;show('results')}
+function renderReview(){
+const app=APP(),R=LAST.R,miss=R.misses.length,traps=app.traps.length;
+$('#mission').innerHTML=
+'<div class="hud"><div class="hud-id"><span class="hud-ic" style="background:'+app.brand+'">'+artSize(app.id,22)+'</span><div><b>Review · '+app.name+' · '+run.code+'</b><span>Same build you tested · no timer · nothing is graded</span></div></div>'+
+'<div class="hud-box rv-leg"><span><i class="rv-dot rv-miss"></i>'+miss+' missed</span><span><i class="rv-dot rv-ok"></i>'+R.found+' found</span><span><i class="rv-dot rv-trap"></i>'+traps+' traps</span></div>'+
+'<button class="btn" id="rvAll" aria-pressed="false">Show fixed app</button>'+
+'<button class="btn" id="rvReset">Reset app</button>'+
+'<button class="btn intelBtn" id="intelBtn" aria-label="Guide">'+IC.intel+'<span class="wide"> Guide</span></button>'+
+'<button class="btn pri" id="rvBack">Back<span class="wide"> to debrief</span></button></div>'+
+'<div class="arena"><div class="stagebox" id="stagebox"><div class="device rv" id="device"><div class="rp" id="rp" style="--b:'+app.brand+'"></div><div class="rvbar" id="rvbar"></div></div></div>'+
+'<aside class="rail" id="rail"><div class="rail-x"><span class="lab">Review guide</span><button class="btn sm" id="railClose">Close</button></div><div class="pane rv-pane" id="pane"></div></aside></div>';
+const rp=$('#rp');let q=0;rp.addEventListener('scroll',()=>{if(!q)q=requestAnimationFrame(()=>{q=0;rvMark()})},true);
+rr();rvPane();
+if(window.ResizeObserver){if(RO)RO.disconnect();RO=new ResizeObserver(fit);RO.observe($('#stagebox'))}
+}
+function rvPane(){
+const app=APP(),p=$('#pane');if(!p)return;const f=run.rvFocus;
+const card=id=>{
+ const x=findDef(id),n=rvNum(id),c=rvCls(id),on=id===f,it=rvItem(id),trap=id.charAt(0)==='t';
+ const chip=trap?'Trap · don\'t report':run.logged[id]?'Found · '+(it?it.p:0)+'/100':'Missed';
+ let h='<div class="rvc'+(on?' on':'')+'"><button class="rvc-h" data-rvf="'+id+'" aria-expanded="'+on+'"><i class="rv-pin s '+c+'">'+n+'</i><span class="t">'+esc(rvTitle(x))+'</span><span class="pp k '+c+'">'+chip+'</span></button>';
+ if(!on)return h+'</div>';
+ h+='<div class="rvc-b"><p class="rv-where" id="rvWhere"></p>';
+ if(trap){h+='<span class="lab">Why it is a trap</span><p>'+esc(x.why)+'</p><span class="lab">Correct call</span><p>Don\'t report · FILTER Gate '+x.gate+' ('+['External site','Says unavailable','Missing prerequisite','Known limitation'][x.gate-1]+').</p>';return h+'</div></div>'}
+ const fixed=run.rvAll||run.fixed.has(id);
+ h+='<div class="seg" role="group" aria-label="View"><button data-rvmode="broken" aria-pressed="'+!fixed+'">As tested</button><button data-rvmode="fixed" aria-pressed="'+fixed+'">How it should be</button></div>';
+ h+='<div class="dstats"><span class="pp k">'+TYPES[x.kind].t+'</span><span class="pp '+x.prio+'">'+x.prio+'</span><span class="pp k">HUNT #'+x.hunt.join(', #')+'</span></div>';
+ h+='<span class="lab">Where</span><p>'+esc((x.crumbs||[x.page]).join(' › '))+'</p>';
+ h+='<span class="lab">What is wrong</span><p>'+esc(x.defect)+'</p>';
+ h+=x.steps&&x.steps.length?'<span class="lab">Reproduce it here</span><ol class="rv-steps">'+x.steps.map(s=>'<li>'+esc(s)+'</li>').join('')+'</ol>':'<span class="lab">How to spot it</span><p>'+esc(x.hint)+' Open the Real app list in the brief and compare it with this screen.</p>';
+ h+='<span class="lab">How it should be</span><p>It should '+esc(x.exp)+' so the user can '+esc(x.outcome)+'. '+esc(x.baseline)+'</p>';
+ h+='<span class="lab">Why it matters</span><p>'+esc(x.impact)+'</p>';
+ if(it){const bad=it.rows.filter(r=>!r.ok);h+='<span class="lab">Your submission</span>'+(bad.length?'<ul class="rv-fix">'+bad.map(r=>'<li><b>'+FIELDS[r.k].l+'</b> · you chose: '+esc(r.you)+(r.want?'<br>correct: '+esc(r.want):'')+'</li>').join('')+'</ul>':'<p>Every rubric field was right.</p>')}
+ else h+='<span class="lab">Next time</span><p>'+esc(x.hint)+' Sweep HUNT #'+x.hunt[0]+' (Phase '+String(Math.ceil(x.hunt[0]/10)).padStart(2,'0')+' '+PHASES[Math.ceil(x.hunt[0]/10)-1]+').</p>';
+ return h+'</div></div>'};
+p.innerHTML='<p class="note">This is the build you just tested. Every issue in this task is marked: <b class="c-miss">red</b> missed, <b class="c-ok">green</b> found, <b class="c-trap">grey</b> trap. Pick one, follow the steps until its marker appears, then switch to <b>How it should be</b>.</p>'+
+'<span class="lab">Findings in this task</span>'+run.list.map(card).join('')+'<span class="lab">FILTER traps</span>'+app.traps.map(t=>card(t.id)).join('');
+rvBar();rvMark();
+}
+function rvBar(){
+const b=$('#rvbar');if(!b)return;const id=run.rvFocus,x=findDef(id),c=rvCls(id),fixed=id.charAt(0)!=='t'&&(run.rvAll||run.fixed.has(id));
+b.className='rvbar '+c;
+b.innerHTML='<button class="nav" data-rvstep="-1" aria-label="Previous issue">‹</button><span class="m"><i class="rv-pin s '+c+'">'+rvNum(id)+'</i><span class="tx">'+esc(rvTitle(x))+'</span><span class="st" id="rvSt"></span></span>'+(fixed?'<span class="fx">FIXED VIEW</span>':'')+'<button class="nav" data-rvstep="1" aria-label="Next issue">›</button>';
+}
+function rvMark(){
+const rp=$('#rp');if(!rp||!run||!run.review)return;
+rp.querySelectorAll('.rv-layer').forEach(n=>n.remove());rp.querySelectorAll('.rv-focus').forEach(n=>n.classList.remove('rv-focus'));
+const layer=document.createElement('div');layer.className='rv-layer';rp.appendChild(layer);
+const R0=rp.getBoundingClientRect(),s=R0.width/(rp.offsetWidth||1)||1,main=rp.querySelector('.rp-main'),M=main&&main.getBoundingClientRect();
+let on=false;const f=run.rvFocus;
+rp.querySelectorAll('[data-hot]').forEach(el=>{
+ const id=el.dataset.hot,n=rvNum(id);if(!n)return;const c=rvCls(id);el.classList.add('rv-h',c);
+ const r=el.getBoundingClientRect();if(!r.width&&!r.height)return;
+ if(id===f){el.classList.add('rv-focus');on=true}
+ if(M&&main.contains(el)&&(r.bottom<M.top+4||r.top>M.bottom-4))return;
+ const b=document.createElement('button');b.className='rv-pin '+c+(id===f?' on':'');b.dataset.rvf=id;b.textContent=n;b.setAttribute('aria-label','Issue '+n);
+ b.style.left=Math.max(12,(r.left-R0.left)/s)+'px';b.style.top=Math.max(12,(r.top-R0.top)/s)+'px';layer.appendChild(b)});
+const fixed=f.charAt(0)!=='t'&&(run.rvAll||run.fixed.has(f));
+const msg=fixed?'Fixed view: this is how the real app behaves, so there is no marker.':on?'On this screen now. Look at the pulsing outline.':'Not on this screen yet. Follow the steps in the guide.';
+const w=$('#rvWhere');if(w){w.textContent=msg;w.className='rv-where'+(on&&!fixed?' on':'')}
+const st=$('#rvSt');if(st)st.textContent=fixed?'':on?'· on screen':'· follow the steps';
+}
+function rvFocus(id,scroll){
+run.rvFocus=id;rvPane();
+const el=$('#rp [data-hot="'+id+'"]');if(el&&scroll!==false){el.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});setTimeout(rvMark,450)}
+}
+function rvStep(d){const ids=rvIds(),i=ids.indexOf(run.rvFocus);rvFocus(ids[(i+d+ids.length)%ids.length])}
 const COACH_URL='https://paymegpt.com/agents/99384876/embed';
 function runData(){
 const {R,app,d}=LAST;

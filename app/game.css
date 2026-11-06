@@ -376,3 +376,42 @@ h1,h2,h3{font-family:var(--fd);margin:0;text-wrap:balance}
 .pcard2{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 24px;max-width:440px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.5);animation:zoom .3s ease-out}
 .pcard2 h2{font-size:28px}
 .pcard2 .rank-x b{color:var(--fg);font-size:13px}
+
+/* review mode */
+.rv-miss{--rvc:#EF4B4B}.rv-ok{--rvc:#2FB07A}.rv-trap{--rvc:#8A94A6}
+.rp .rv-h{outline:3px solid var(--rvc);outline-offset:2px}
+.rp .rv-h.rv-focus{outline-width:4px;animation:rvp 1.3s ease-in-out infinite}
+@keyframes rvp{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rvc) 55%,transparent)}50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--rvc) 0%,transparent)}}
+.rv-layer{position:absolute;inset:0;pointer-events:none;z-index:4}
+.rv-pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;min-width:24px;height:24px;border-radius:12px;border:2px solid #fff;background:var(--rvc);color:#fff;font:700 11px/20px var(--fm);padding:0 5px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;font-style:normal}
+.rv-pin.on{transform:translate(-50%,-50%) scale(1.3);z-index:2}
+.rv-pin.s{position:static;transform:none;display:inline-block;flex:none;min-width:22px;height:22px;line-height:18px;box-shadow:none}
+.rv-leg{gap:12px;font-size:12px;color:var(--muted)}.rv-leg span{display:inline-flex;align-items:center;gap:6px}
+.rv-dot{width:10px;height:10px;border-radius:50%;background:var(--rvc);display:inline-block}
+#rvAll.on{background:var(--ok);border-color:var(--ok);color:#06140D}
+.device.rv{border-color:#3A4458}
+.rvbar{position:absolute;z-index:5;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:calc(100% - 32px);background:#0B0E14;color:#E8ECF1;border:2px solid var(--rvc);border-radius:999px;padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:13px}
+.rvbar .m{display:flex;align-items:center;gap:8px;min-width:0;padding:0 4px}
+.rvbar .tx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.rvbar .st{white-space:nowrap;color:var(--muted);font-size:12px}
+.rvbar .fx{font:700 10px/1 var(--fm);letter-spacing:.1em;background:var(--ok);color:#06140D;border-radius:6px;padding:5px 7px;white-space:nowrap}
+.rvbar .nav{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--raise);color:var(--fg);font-size:20px;line-height:1;cursor:pointer}
+.rv-pane{overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.rv-pane .c-miss{color:#FF7A7A}.rv-pane .c-ok{color:var(--ok)}.rv-pane .c-trap{color:#AEB6C4}
+.rvc{flex:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.rvc.on{border-color:var(--acc)}
+.rvc-h{width:100%;display:flex;align-items:center;gap:8px;padding:10px;background:none;border:0;color:var(--fg);text-align:left;cursor:pointer;font:600 13px/1.35 var(--fb)}
+.rvc-h .t{flex:1;min-width:0}
+.rvc-h .pp{flex:none;white-space:nowrap}
+.rvc-h .pp.rv-miss{color:#FF8A8A}.rvc-h .pp.rv-ok{color:var(--ok)}
+.rvc-b{padding:0 12px 12px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.rvc-b p{margin:0}.rvc-b .lab{margin-top:6px}
+.rv-steps,.rv-fix{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.rv-where{background:var(--raise);border-radius:8px;padding:8px 10px;color:var(--muted)}
+.rv-where.on{color:#06140D;background:var(--ok);font-weight:600}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;padding:9px 8px;background:var(--raise);color:var(--muted);border:0;font:600 13px var(--fb);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:#0B0E14}
+.rv-cta{flex-direction:row;align-items:center;justify-content:space-between;gap:14px;border-color:var(--acc)}
+.rv-cta>div{display:flex;flex-direction:column;gap:4px}
+@media (max-width:640px){.rv-cta{flex-direction:column;align-items:stretch}.rv-leg{display:none}.rvbar{bottom:12px}.rvbar .st{display:none}}
