@@ -16,6 +16,7 @@ flag:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="t
 unlock:'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M5 7V5a3 3 0 0 1 5.6-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
 cross:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 0.8v3.4M8 11.8v3.4M0.8 8h3.4M11.8 8h3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
 intel:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M5 6h6M5 9h6M5 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+pause:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/></svg>',
 play:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
 shield:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V8c0 3.2-2.4 5.6-5.5 6.5C4.9 13.6 2.5 11.2 2.5 8V3.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M5.5 8 7.3 9.8 10.6 6.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 };
@@ -644,17 +645,19 @@ let tick=null,RO=null;
 function startMission(){
 const app=APPS[pickApp],d=DIFFS[pickDiff],mins=pickTime,tk=curTask(),n=nFor(app,tk,pickDiff,mins),ids=pickDefects(app,pickDiff,n,tk),now=Date.now()+1100,key=taskKey(app,tk);
 STORE.queue=STORE.queue.filter(k=>k!==key);STORE.task=key;save();
-run={appId:app.id,task:key,code:tk.code,title:tk.t,brief:tk.brief,diff:pickDiff,mins,n,active:new Set(ids),list:ids,st:app.init(),start:now,end:now+mins*60000,flag:false,logged:{},order:[],ff:0,over:false,tab:'brief',w60:false,streak:0,moved:true,jamUntil:0,jams:0,blind:0,hits:0,revoked:false};
+run={paused:false,pauseAt:0,pausedMs:0,pauses:0,appId:app.id,task:key,code:tk.code,title:tk.t,brief:tk.brief,diff:pickDiff,mins,n,active:new Set(ids),list:ids,st:app.init(),start:now,end:now+mins*60000,flag:false,logged:{},order:[],ff:0,over:false,tab:'brief',w60:false,streak:0,moved:true,jamUntil:0,jams:0,blind:0,hits:0,revoked:false};
 tmsg.length=0;
 renderMission();show('mission');fit();
 const it=$('#intro');it.innerHTML='<div class="intro-c"><span class="lab">Mission '+String(STORE.runs.length+1).padStart(2,'0')+' · '+d.t+'</span><h2>'+tk.t+'</h2><p>'+app.name+' · '+tk.code+' · '+n+' findings · '+mins+':00</p><span class="go">GO</span></div>';it.hidden=false;sfx('flagOn');
 setTimeout(()=>{it.hidden=true},1100);
 clearInterval(tick);tick=setInterval(updClock,1000);updClock();
 }
-function remain(){return Math.max(0,Math.min(run.mins*60,(run.end-Date.now())/1000))}
+function nowT(){return run&&run.paused?run.pauseAt:Date.now()}
+function remain(){return Math.max(0,Math.min(run.mins*60,(run.end-nowT())/1000))}
 function updClock(){
 if(!run||run.over)return;const r=remain(),total=run.mins*60,el=$('#clock'),tm=$('#timer'),ring=$('#ring');
 if(el)el.textContent=fmtT(r);if(tm)tm.className='hud-box timer'+(r<60?' crit':r<120?' warn':'');if(ring)ring.style.strokeDashoffset=String(113.1*(1-r/total));
+if(run.paused){if(el)el.textContent=fmtT(r);const pb=$('#pauseClock');if(pb)pb.textContent=fmtT((Date.now()-run.pauseAt)/1000);return}
 if(r<=60&&!run.w60&&r>0){run.w60=true;sfx('warn');toast('1 minute left','flag')}
 if(r<=10&&r>0)sfx('tick');
 if(run.jamUntil&&Date.now()>=run.jamUntil){run.jamUntil=0;toast('Scanner back online. Reproduce, then flag.')}
@@ -669,6 +672,7 @@ $('#mission').innerHTML=
 '<div class="hud-box"><span class="lab">Findings</span><div class="pips" id="pips" role="img"></div></div>'+
 '<div class="hud-box timer" id="timer"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="tr-bg" cx="22" cy="22" r="18"/><circle class="tr-fg" id="ring" cx="22" cy="22" r="18" stroke-dasharray="113.1" stroke-dashoffset="0"/></svg><b id="clock" aria-label="Time left">'+fmtT(remain())+'</b></div>'+
 '<div class="hud-box guard" id="guard" title="Anti-guess guard">'+IC.shield+'<b></b></div>'+
+'<button class="btn" id="pauseBtn" aria-pressed="false" aria-label="Pause task">'+IC.pause+'<span class="wide"> Pause</span></button>'+
 '<button class="btn flag" id="flagBtn" aria-pressed="false">'+IC.cross+' FLAG <span class="keys"><kbd>F</kbd></span></button>'+
 '<button class="btn intelBtn" id="intelBtn" aria-label="Intel">'+IC.intel+'<span class="wide"> Intel</span></button>'+
 '<button class="btn" id="endBtn">End<span class="wide"> &amp; debrief</span></button></div>'+
@@ -713,7 +717,25 @@ run.flag=on;if(!quiet)sfx(on?'flagOn':'flagOff');const b=$('#flagBtn');if(b){b.c
 const dv=$('#device');if(dv){dv.classList.toggle('flagging',on);const sb=dv.querySelector('.scanbar');if(on&&!sb)dv.insertAdjacentHTML('afterbegin','<div class="scanbar">'+IC.cross+' SCAN MODE · CLICK WHERE THE ISSUE SHOWS</div>');if(!on&&sb)sb.remove()}
 const rp=$('#rp');if(rp)rp.classList.toggle('flagging',on);clearTarget();
 }
-function guardBlock(){if(!run)return'';const now=Date.now();if(run.revoked)return'Miss budget used up. The scanner is locked for this mission.';if(run.jamUntil>now)return'Scanner jammed for '+Math.ceil((run.jamUntil-now)/1000)+'s more. Use the app to reproduce the issue meanwhile.';return''}
+function togglePause(quiet){
+if(!run||run.over)return;const dv=$('#device'),rp=$('#rp'),b=$('#pauseBtn');
+if(!run.paused){
+ if(run.flag)setFlag(false,true);
+ run.paused=true;run.pauseAt=Date.now();run.pauses++;
+ if(rp)rp.inert=true;
+ if(dv){dv.classList.add('paused');dv.insertAdjacentHTML('beforeend','<div class="pausebox" id="pausebox"><div class="pcard2"><span class="lab" style="color:var(--flag)">Task paused</span><h2>Take a break</h2><p class="note">The clock is stopped at <b>'+fmtT(remain())+'</b>. The app is locked until you resume. You can still read Brief, Real app, Rules and Log.</p><span class="rank-x">On break <b id="pauseClock">00:00</b></span><span class="dstats" style="justify-content:center"><button class="btn" id="pauseRef">Review real app</button><button class="btn pri" id="resumeBtn">'+IC.play+' Resume <span class="keys"><kbd>P</kbd></span></button></span></div></div>')}
+ if(b){b.classList.add('on');b.setAttribute('aria-pressed','true');b.setAttribute('aria-label','Resume task');b.innerHTML=IC.play+'<span class="wide"> Resume</span>'}
+ if(!quiet){sfx('flagOff');toast('Paused. Timer stopped.')}
+}else{
+ const dt=Date.now()-run.pauseAt;run.end+=dt;run.pausedMs+=dt;if(run.jamUntil)run.jamUntil+=dt;run.paused=false;
+ if(rp)rp.inert=false;
+ if(dv){dv.classList.remove('paused');const pb=$('#pausebox');if(pb)pb.remove()}
+ if(b){b.classList.remove('on');b.setAttribute('aria-pressed','false');b.setAttribute('aria-label','Pause task');b.innerHTML=IC.pause+'<span class="wide"> Pause</span>'}
+ if(!quiet){sfx('flagOn');toast('Resumed. Clock running.')}
+}
+updClock();renderGuard();
+}
+function guardBlock(){if(!run)return'';if(run.paused)return'Task is paused. Resume to flag.';const now=Date.now();if(run.revoked)return'Miss budget used up. The scanner is locked for this mission.';if(run.jamUntil>now)return'Scanner jammed for '+Math.ceil((run.jamUntil-now)/1000)+'s more. Use the app to reproduce the issue meanwhile.';return''}
 function missFlag(){
 const g=DIFFS[run.diff].guard;run.ff++;sfx('bad');
 run.streak=run.moved?1:run.streak+1;run.moved=false;if(run.streak>1)run.blind++;
@@ -733,7 +755,7 @@ else if(g.max){const left=g.max-run.ff;txt=left+' miss'+(left===1?'':'es')+' lef
 else{txt=run.ff+' miss'+(run.ff===1?'':'es');sh=run.ff+'✗';cls=g.jamAt&&run.streak>0?'warn':''}
 el.setAttribute('data-s',sh);
 el.className='hud-box guard'+(cls?' '+cls:'');el.querySelector('b').textContent=txt;el.setAttribute('aria-label','Anti-guess guard: '+txt);
-const fb=$('#flagBtn');if(fb)fb.disabled=run.revoked||run.jamUntil>now;
+const fb=$('#flagBtn');if(fb)fb.disabled=run.paused||run.revoked||run.jamUntil>now;
 }
 let lastT=null;function clearTarget(){if(lastT){lastT.classList.remove('flag-target');lastT=null}}
 function doFlag(target){
@@ -769,6 +791,8 @@ if(t.closest('#dlgNext')){dlgNext();return}
 if(t.closest('#dlgBack')){closeBrief();return}
 if(t.closest('#intro')){$('#intro').hidden=true;return}
 if(!run)return;
+if(t.closest('#pauseBtn')||t.closest('#resumeBtn')){togglePause();return}
+if(t.closest('#pauseRef')){run.tab='ref';document.querySelectorAll('#rail [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab==='ref'));renderPane();$('#rail').classList.add('open');return}
 if(t.closest('#flagBtn')){setFlag(!run.flag);return}
 if(t.closest('#endBtn')){endMission();return}
 if(t.closest('#intelBtn')){$('#rail').classList.add('open');return}
@@ -794,6 +818,8 @@ if(!$('#rankup').hidden){if(e.key==='Escape'||e.key==='Enter'){e.preventDefault(
 if(e.key==='Enter'&&document.activeElement&&document.activeElement.id==='nameIn'){$('#playBtn').click();return}
 if(!run||run.over||$('#mission').hidden)return;
 const tag=(document.activeElement&&document.activeElement.tagName)||'';
+if((e.key==='p'||e.key==='P')&&$('#builder').hidden&&!['INPUT','SELECT','TEXTAREA'].includes(tag)&&!e.metaKey&&!e.ctrlKey){e.preventDefault();togglePause();return}
+if(run.paused){if(e.key==='Escape')togglePause();return}
 if(!$('#builder').hidden){
  if(e.key==='Escape'){closeBuilder();toast('Finding discarded. You can flag it again.');return}
  const map={'1':0,'2':1,'3':2,'4':3,'5':4};const k=e.key;
@@ -879,7 +905,7 @@ return BLD.opts[key].map((o,i)=>({v:i,t:o.t}));
 }
 function firstOpen(){const i=BLD.order.findIndex(k=>BLD.ans[k]===undefined);return i<0?BLD.order.length:i}
 function answerText(k){const v=BLD.ans[k];if(v===undefined)return'—';if(k==='type')return TYPES[v].t;if(k==='gate')return GATES[v];if(k==='prio')return v;return BLD.opts[k][v].t}
-function elapsed(){return run?Math.max(0,(Date.now()-run.start)/1000):0}
+function elapsed(){return run?Math.max(0,(nowT()-run.start-run.pausedMs)/1000):0}
 function renderBuilder(){
 const b=BLD,key=b.order[b.i],f=FIELDS[key],done=b.order.every(k=>b.ans[k]!==undefined);
 const allKeys=b.ans.type===undefined?['type','prio',...TEXTK]:b.order;
@@ -939,11 +965,11 @@ return R;
 /* ---------- results ---------- */
 let LAST=null;
 function endMission(){
-if(!run||run.over)return;run.over=true;clearInterval(tick);if(!$('#builder').hidden)closeBuilder();setFlag(false,true);
+if(!run||run.over)return;if(run.paused)togglePause(true);run.over=true;clearInterval(tick);if(!$('#builder').hidden)closeBuilder();setFlag(false,true);
 const R=gradeRun(),app=APP(),d=DIFFS[run.diff],prevXP=STORE.xp;
 STORE.xp+=R.xp;STORE.runs.unshift({app:app.name,appId:app.id,task:run.task,code:run.code,title:run.title,target:run.list.length,facc:R.facc,diff:d.t,tier:run.diff,mins:run.mins,grade:R.grade,pct:R.pct,xp:R.xp,found:R.found,trapsOk:R.traps.filter(t=>t.ok).length,date:new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})});STORE.runs=STORE.runs.slice(0,300);
 const qd=[];QUESTS.forEach(q=>{if(!STORE.quests.includes(q.id)&&q.prog(STORE)>=q.goal){STORE.quests.push(q.id);STORE.xp+=q.xp;qd.push(q)}});
-save();LAST={R,app,d,code:run.code,title:run.title,task:run.task,list:run.list,prevXP,mins:run.mins,n:run.n,quests:qd,gain:STORE.xp-prevXP};
+save();LAST={R,app,d,pausedMs:run.pausedMs,pauses:run.pauses,code:run.code,title:run.title,task:run.task,list:run.list,prevXP,mins:run.mins,n:run.n,quests:qd,gain:STORE.xp-prevXP};
 renderRank();renderResults();show('results');sfx('SAB'.includes(R.grade)?'win':'lose');if(qd.length)setTimeout(()=>sfx('quest'),900);animXP();
 }
 function animXP(){
@@ -976,7 +1002,7 @@ const tabs=[['debrief','Debrief'],['found','Findings · '+R.items.length],['miss
 $('#results').innerHTML='<div class="rs">'+
 '<section class="rs-hero"><div class="grade g'+R.grade+'">'+R.grade+'</div><div class="rs-t"><span class="lab">'+app.name+' · '+LAST.code+' · '+esc(LAST.title)+' · '+d.t+' · '+LAST.mins+' min</span><h2>'+head+' · '+R.pct+'% accuracy</h2>'+
 '<div class="xpgain"><b id="xpNum">+0</b><span class="lab">XP</span><div class="xpbar"><i id="xpFill"></i></div><span class="rank-x">'+b.r.t+' · tier ×'+d.mult+(LAST.quests.length?' · quests +'+LAST.quests.reduce((a,q)=>a+q.xp,0):'')+'</span><span class="rankup" id="rankUp" hidden></span></div>'+
-'<div class="kpis"><div class="kpi"><b>'+R.found+'/'+LAST.list.length+'</b><span>findings found</span></div><div class="kpi"><b>'+fmtT(R.used)+'</b><span>time used of '+LAST.mins+':00</span></div><div class="kpi"><b>'+R.facc+'%</b><span>flag accuracy · '+R.ff+' miss'+(R.ff===1?'':'es')+'</span></div><div class="kpi"><b>'+R.jams+(R.revoked?' · 🔒':'')+'</b><span>scanner jams</span></div><div class="kpi"><b>'+R.traps.filter(t=>t.ok).length+'/'+R.traps.length+'</b><span>traps handled</span></div></div></div></section>'+
+'<div class="kpis"><div class="kpi"><b>'+R.found+'/'+LAST.list.length+'</b><span>findings found</span></div><div class="kpi"><b>'+fmtT(R.used)+'</b><span>time used of '+LAST.mins+':00'+(LAST.pauses?' · paused '+fmtT(LAST.pausedMs/1000):'')+'</span></div><div class="kpi"><b>'+R.facc+'%</b><span>flag accuracy · '+R.ff+' miss'+(R.ff===1?'':'es')+'</span></div><div class="kpi"><b>'+R.jams+(R.revoked?' · 🔒':'')+'</b><span>scanner jams</span></div><div class="kpi"><b>'+R.traps.filter(t=>t.ok).length+'/'+R.traps.length+'</b><span>traps handled</span></div></div></div></section>'+
 '<div class="npcsay">'+npcArt(48)+'<div><span class="who">Vera · Lead Validator</span><p>'+esc((R.jams||R.revoked?'I saw your scanner jam. Prove it on screen first, then flag. ':'')+npcReact(R.grade))+'</p></div></div>'+
 (()=>{const A=assess();return A?'<div class="fd"><div class="fd-h"><b>Assessment · '+A.level+' · '+A.score+'</b><span class="pp k">'+A.tasks+'/'+TOTAL_TASKS+' tasks</span></div><span class="note">This task: '+R.found+' of '+LAST.list.length+' findings. Your average across '+A.n+' task run'+(A.n===1?'':'s')+': '+A.avgFound.toFixed(1)+' of '+A.avgTarget.toFixed(1)+' findings per task ('+A.fr+'% find rate), '+A.acc+'% rubric accuracy, '+A.fa+'% flag accuracy.</span></div>':''})()+
 (LAST.quests.length?'<div class="fd"><div class="fd-h"><b>Quest complete</b><span class="pp k" style="color:var(--flag)">+'+LAST.quests.reduce((a,q)=>a+q.xp,0)+' XP</span></div>'+LAST.quests.map(q=>'<span class="note">✓ '+esc(q.t)+' · '+esc(q.d)+'</span>').join('')+'</div>':'')+
@@ -998,7 +1024,7 @@ if(e.target.closest('#lobbyBtn')){run=null;renderLobby();show('lobby');return}
 const COACH_URL='https://paymegpt.com/agents/99384876/embed';
 function runData(){
 const {R,app,d}=LAST;
-return JSON.stringify({trainer:tName(),rank:rankOf(STORE.xp).r.t,app:app.name+' ('+app.cat+')',task:LAST.code+' · '+LAST.title,assessment:(()=>{const A=assess();return A&&{level:A.level,score:A.score,avgFindingsPerTask:+A.avgFound.toFixed(1),avgTargetPerTask:+A.avgTarget.toFixed(1),findRatePct:A.fr,rubricAccuracyPct:A.acc,tasksCompleted:A.tasks}})(),tier:d.t,minutesAllowed:LAST.mins,secondsUsed:R.used,targetFindings:LAST.list.length,found:R.found,rubricAccuracyPct:R.pct,grade:R.grade,falseFlags:R.ff,flagAccuracyPct:R.facc,blindGuesses:R.blind,scannerJams:R.jams,scannerLocked:R.revoked,
+return JSON.stringify({trainer:tName(),rank:rankOf(STORE.xp).r.t,app:app.name+' ('+app.cat+')',task:LAST.code+' · '+LAST.title,assessment:(()=>{const A=assess();return A&&{level:A.level,score:A.score,avgFindingsPerTask:+A.avgFound.toFixed(1),avgTargetPerTask:+A.avgTarget.toFixed(1),findRatePct:A.fr,rubricAccuracyPct:A.acc,tasksCompleted:A.tasks}})(),tier:d.t,minutesAllowed:LAST.mins,secondsUsed:R.used,secondsPaused:Math.round(LAST.pausedMs/1000),targetFindings:LAST.list.length,found:R.found,rubricAccuracyPct:R.pct,grade:R.grade,falseFlags:R.ff,flagAccuracyPct:R.facc,blindGuesses:R.blind,scannerJams:R.jams,scannerLocked:R.revoked,
 findings:R.items.map(it=>({finding:it.x.page+': '+it.x.control,truth:{type:it.x.kind,priority:it.x.prio,hunt:it.x.hunt},points:it.p+'/100',fieldsMissed:it.rows.filter(r=>!r.ok).map(r=>({field:FIELDS[r.k].l,rule:r.rule}))})),
 missed:R.misses.map(x=>({finding:x.page+': '+x.control,type:x.kind,priority:x.prio,hunt:x.hunt})),
 traps:R.traps.map(t=>({trap:t.t.label,handledCorrectly:t.ok,correctGate:t.t.gate}))});
