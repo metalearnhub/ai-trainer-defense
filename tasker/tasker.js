@@ -144,6 +144,7 @@ function askPermission(){
     else toast('Notifications blocked','Allow notifications for this site in Chrome\'s address bar (the icon left of the URL), then try again.','warn')})
 }
 function checkGates(){
+  if(!sessOk())return;
   allTasks().forEach(function(t){
     if(t.status!=='active'||!running(t))return;
     t.fired=t.fired||{};var m=elapsed(t)/60,changed=false;
@@ -171,6 +172,7 @@ if(IDX.cur&&!TASKS[IDX.cur]){IDX.cur=null;VIEW.mode='empty'}
 
 /* ---------- render ---------- */
 function render(){
+  if(!sessOk()){root.innerHTML=authScreen();var ae=$('#aCode')||$('#aEmail');if(ae&&!ae.value)ae.focus();return}
   var t=cur(),keep={};['main','fscroll','tright'].forEach(function(id){var el=$('#'+id);if(el)keep[id]=el.scrollTop});
   root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
   $$('.f textarea').forEach(grow);
@@ -185,7 +187,7 @@ function sideHtml(){
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:45, 1:30, 4:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -289,6 +291,9 @@ document.addEventListener('click',function(ev){
   if(a==='menu'){var sd=$('#side');if(sd)sd.classList.toggle('open');return}
   if(a==='notify'){askPermission();return}
   if(a==='export'){exportData();return}
+  if(a==='authBack'){VIEWAUTH.sent=false;VIEWAUTH.err='';render();return}
+  if(a==='authResend'){authSubmit(true);return}
+  if(a==='signout'){api({action:'signout'}).catch(function(){});signOutLocal('');return}
   if(a==='lateToggle'){var lb=$('#lateBox');if(lb)lb.hidden=!b.checked;return}
   if(a==='huntDone'&&t){t.huntDone=true;t.huntAt=elapsed(t);saveTask(t);render();toast('Exploration done','Stage moved to Log: In progress → Flow → Feather.','ok');return}
   if(a==='editPre'&&t){VIEW.editPre=!VIEW.editPre;render();return}
@@ -323,6 +328,7 @@ document.addEventListener('input',function(ev){
 document.addEventListener('change',function(ev){if(ev.target.id==='imp'&&ev.target.files[0])importData(ev.target.files[0])});
 document.addEventListener('submit',function(ev){
   var f=ev.target;ev.preventDefault();var t=cur();
+  if(f.id==='authForm'){authSubmit(false);return}
   if(f.id==='preForm'&&t){var nv=function(id){return Math.max(0,parseInt($(id).value,10)||0)};t.pre={f:nv('#pF'),l:nv('#pL'),b:nv('#pB'),r:nv('#pR')};if(t.pre.l>t.pre.f)t.pre.f=t.pre.l;VIEW.editPre=false;saveTask(t);render();return}
   if(f.id==='newForm'){
     var app=$('#nApp').value.trim(),url=$('#nUrl').value.trim(),fid=parseFeather(url),sec=$('#nTime').value.trim()?parseTime($('#nTime').value):0;if(sec!=null&&$('#nRun').checked&&VIEW.syncT0)sec+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;
@@ -359,14 +365,16 @@ window.addEventListener('storage',function(ev){if(!ev.key||ev.key.indexOf(P)!==0
 
 /* ---------- backup ---------- */
 function exportData(){var data={app:'AI Trainer Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ai-trainer-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}
-function importData(file){var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result),n=0;(d.tasks||[]).forEach(function(t){if(!t||!t.id)return;var mine=TASKS[t.id];if(!mine||(t.updatedAt||0)>(mine.updatedAt||0)){TASKS[t.id]=t;if(IDX.ids.indexOf(t.id)<0)IDX.ids.push(t.id);lsSet('t.'+t.id,t);if(SYNC_KEY)pushQ[t.id]=1;n++}});saveIdx();render();pushNow();toast('Backup imported',n+' task'+(n===1?'':'s')+' added or updated.','ok')}catch(e){toast('Import failed','That file is not an AI Trainer Tasker backup.','crit')}};r.readAsText(file)}
+function importData(file){var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result),n=0;(d.tasks||[]).forEach(function(t){if(!t||!t.id)return;var mine=TASKS[t.id];if(!mine||(t.updatedAt||0)>(mine.updatedAt||0)){TASKS[t.id]=t;if(IDX.ids.indexOf(t.id)<0)IDX.ids.push(t.id);lsSet('t.'+t.id,t);if(sessOk())pushQ[t.id]=1;n++}});saveIdx();render();pushNow();toast('Backup imported',n+' task'+(n===1?'':'s')+' added or updated.','ok')}catch(e){toast('Import failed','That file is not an AI Trainer Tasker backup.','crit')}};r.readAsText(file)}
 
 var LOGO='<svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 /* ---------- cloud sync: your Supabase store, reached with the key in the gated PayMeGPT page ---------- */
 var SYNC_URL='https://qbubwemdvwflxvxwesrl.supabase.co/functions/v1/tasker';
-var SYNC_KEY=window.TASKER_SYNC_KEY||'';
-var SYNC={state:SYNC_KEY?'syncing':'off',at:null,err:'',since:''},pushQ={},pushTimer=null,pendingRender=false,busy=false;
-function api(body){return fetch(SYNC_URL,{method:'POST',headers:{'content-type':'application/json','x-tk-key':SYNC_KEY},body:JSON.stringify(body)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d})})}
+var SESSION=lsGet('session',null),VIEWAUTH={email:lsGet('lastEmail',''),sent:false,busy:false,err:''};
+function sessOk(){return!!(SESSION&&SESSION.token&&Date.parse(SESSION.expires_at)>Date.now())}
+var SYNC={state:'syncing',at:null,err:'',since:''},pushQ={},pushTimer=null,pendingRender=false,busy=false;
+function api(body,auth){var h={'content-type':'application/json'};if(auth!==false&&SESSION)h['x-tk-session']=SESSION.token;return fetch(SYNC_URL,{method:'POST',headers:h,body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return{}}).then(function(d){if(r.status===401&&d.error==='signed out'){signOutLocal('Your session ended. Sign in again.')}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d})})}
+function signOutLocal(msg){SESSION=null;try{localStorage.removeItem(P+'session')}catch(e){}VIEWAUTH.sent=false;render();if(msg)toast('Signed out',msg,'warn')}
 function mergeTask(a,b){
   if(!a)return b;if(!b)return a;
   var newer=(b.updatedAt||0)>(a.updatedAt||0)?b:a,older=newer===a?b:a,m=JSON.parse(JSON.stringify(newer)),tomb={},fs={};
@@ -388,16 +396,16 @@ function applyRows(rows){var changed=false;(rows||[]).forEach(function(row){
   if(loc&&!same(m,row.data))pushQ[row.id]=1});
   if(changed)saveIdx();return changed}
 function pull(full){
-  if(!SYNC_KEY||busy)return Promise.resolve();busy=true;
+  if(!sessOk()||busy)return Promise.resolve();busy=true;
   return api({action:'list',since:full?'':SYNC.since}).then(function(d){
     var changed=applyRows(d.rows);if(full)allTasks().forEach(function(t){pushQ[t.id]=1});
     busy=false;if(changed)softRender();return pushNow();
   }).catch(function(e){busy=false;fail(e)});
 }
 function fail(e){SYNC.state=navigator.onLine===false?'offline':'error';SYNC.err=e&&e.message||String(e);syncBits()}
-function queuePush(id){if(!SYNC_KEY)return;pushQ[id]=1;clearTimeout(pushTimer);pushTimer=setTimeout(pushNow,1200);SYNC.state='pending';syncBits()}
+function queuePush(id){if(!sessOk())return;pushQ[id]=1;clearTimeout(pushTimer);pushTimer=setTimeout(pushNow,1200);SYNC.state='pending';syncBits()}
 function pushNow(){
-  if(!SYNC_KEY)return Promise.resolve();var ids=Object.keys(pushQ);
+  if(!sessOk())return Promise.resolve();var ids=Object.keys(pushQ);
   if(!ids.length){SYNC.state='synced';SYNC.at=Date.now();syncBits();return Promise.resolve()}
   pushQ={};
   return api({action:'get',ids:ids}).then(function(d){
@@ -412,7 +420,7 @@ function pushNow(){
   }).then(function(){SYNC.state='synced';SYNC.at=Date.now();SYNC.err='';syncBits()})
   .catch(function(e){ids.forEach(function(id){pushQ[id]=1});fail(e)});
 }
-function pushDelete(id){if(!SYNC_KEY)return;pushQ[id]=1;pushNow()}
+function pushDelete(id){if(!sessOk())return;pushQ[id]=1;pushNow()}
 function typing(){var a=document.activeElement;return!!(a&&root.contains(a)&&/^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName))}
 function softRender(){if(typing()){pendingRender=true;return}pendingRender=false;render()}
 document.addEventListener('focusout',function(){setTimeout(function(){if(pendingRender&&!typing())softRender()},300)});
@@ -420,14 +428,32 @@ window.addEventListener('online',function(){pull(false)});
 document.addEventListener('visibilitychange',function(){if(!document.hidden)pull(false)});
 setInterval(function(){if(!document.hidden)pull(false);else if(Object.keys(pushQ).length)pushNow()},15000);
 function syncLabel(){
-  if(!SYNC_KEY)return'Saved on this device only. Open the app from its PayMeGPT link to sync.';
+  if(!sessOk())return'Signed out.';
   if(SYNC.state==='synced')return'Synced '+new Date(SYNC.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' across your devices';
   if(SYNC.state==='pending'||SYNC.state==='syncing')return'Syncing…';
   if(SYNC.state==='offline')return'Offline. Saved here; syncs when you\'re back online.';
   return'Sync problem: '+SYNC.err+'. Saved on this device.';
 }
-function syncBits(){var el=$('#syncLab');if(el){el.textContent=syncLabel();el.className='synclab '+(SYNC_KEY?(SYNC.state==='synced'?'ok':SYNC.state==='error'?'err':''):'')}}
-function initCloud(){if(SYNC_KEY)pull(true)}
+function syncBits(){var el=$('#syncLab');if(el){el.textContent=syncLabel();el.className='synclab '+(sessOk()?(SYNC.state==='synced'?'ok':SYNC.state==='error'?'err':''):'')}}
+function initCloud(){if(sessOk())pull(true)}
+setInterval(function(){if(SESSION&&!sessOk())signOutLocal('24 hours passed. Sign in again with your email.')},60000);
+function authScreen(){
+  var a=VIEWAUTH;
+  return'<div class="gate-wrap"><form class="card form" id="authForm" autocomplete="on"><div class="brand" style="padding:0">'+LOGO+'<div><b>AI Trainer Tasker</b><span class="lab">Private · email sign-in</span></div></div>'+
+  (!a.sent?'<p class="hint" style="margin:0">Enter your email. A 6-digit code is sent from hello@dijaedadula.com. You stay signed in for 24 hours on this device.</p><label for="aEmail">Email<input class="in" id="aEmail" type="email" autocomplete="email" required value="'+esc(a.email)+'"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Sending…':'Send code')+'</button></div>':
+  '<p class="hint" style="margin:0">Code sent to <b>'+esc(a.email)+'</b>. Check your inbox and spam. It expires in 10 minutes.</p><label for="aCode">6-digit code<input class="in mono" id="aCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required style="font-size:22px;letter-spacing:.3em"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Checking…':'Sign in')+'</button><button class="btn" type="button" data-a="authBack">Use another email</button><button class="btn ghost" type="button" data-a="authResend">Send a new code</button></div>')+
+  '</form></div>';
+}
+function authSubmit(resend){
+  var a=VIEWAUTH;if(a.busy)return;
+  if(!a.sent||resend){var em=resend?a.email:($('#aEmail').value||'').trim().toLowerCase();if(!em)return;a.email=em;lsSet('lastEmail',em);a.busy=true;a.err='';render();
+    api({action:'code',email:em},false).then(function(){a.sent=true;a.busy=false;a.err='';render();var c=$('#aCode');if(c)c.focus()}).catch(function(e){a.busy=false;a.err=e.message;render()});return}
+  var code=($('#aCode').value||'').replace(/\D/g,'');if(code.length<6){a.err='Enter all 6 digits.';render();return}
+  a.busy=true;a.err='';render();
+  api({action:'verify',email:a.email,code:code},false).then(function(d){a.busy=false;a.sent=false;SESSION={token:d.token,expires_at:d.expires_at,email:d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','Syncing across your devices for the next 24 hours.','ok');pull(true)})
+  .catch(function(e){a.busy=false;a.err=e.message;render();var c=$('#aCode');if(c)c.focus()});
+}
+
 render();initCloud();checkGates();
 var boot=document.getElementById('bootMsg');if(boot)boot.remove();
 })();
