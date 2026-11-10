@@ -1,4 +1,4 @@
-/* CheckSet Tasker — task clock, gate reminders, rapid-hunt drafts and finding history.
+/* AI Trainer Tasker — task clock, gate reminders, rapid-hunt drafts and finding history.
    Everything is saved in this browser (localStorage) on every keystroke. */
 (function(){
 'use strict';
@@ -28,7 +28,7 @@ function loadTasks(){TASKS={};IDX.ids.forEach(function(id){var t=lsGet('t.'+id,n
 loadTasks();
 function saveIdx(){lsSet('index',IDX)}
 var savedTimer=null;
-function saveTask(t){t.updatedAt=Date.now();if(lsSet('t.'+t.id,t)){$$('[data-saved]').forEach(function(el){el.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})})}}
+function saveTask(t){t.updatedAt=Date.now();if(typeof queuePush==='function')queuePush(t.id);if(lsSet('t.'+t.id,t)){$$('[data-saved]').forEach(function(el){el.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})})}}
 function cur(){return IDX.cur&&TASKS[IDX.cur]||null}
 function allTasks(){return IDX.ids.map(function(id){return TASKS[id]}).filter(Boolean).sort(function(a,b){return b.createdAt-a.createdAt})}
 
@@ -40,7 +40,7 @@ function pause(t){if(t.clock.at){t.clock.base=elapsed(t);t.clock.at=null}}
 function resume(t){if(!t.clock.at)t.clock.at=Date.now()}
 
 /* ---------- counts & rules (CheckSet guidelines, Nov 2026) ---------- */
-function counts(t){var f=t.findings||[],d=f.filter(function(x){return x.status==='done'});return{n:d.length,b:d.filter(function(x){return x.type==='bug'}).length,fr:d.filter(function(x){return x.type==='fr'}).length,prog:f.filter(function(x){return x.status==='progress'}).length,draft:f.filter(function(x){return x.status==='draft'}).length,all:f.length}}
+function counts(t){var f=t.findings||[],d=f.filter(function(x){return x.status==='done'});var pre=t.pre||{};return{n:d.length+(+pre.l||0),b:d.filter(function(x){return x.type==='bug'}).length+(+pre.b||0),fr:d.filter(function(x){return x.type==='fr'}).length+(+pre.r||0),prog:f.filter(function(x){return x.status==='progress'}).length,draft:f.filter(function(x){return x.status==='draft'}).length+Math.max(0,(+pre.f||0)-(+pre.l||0)),all:f.length+Math.max(+pre.f||0,+pre.l||0),tracked:f.length}}
 function planFound(m){return m<=45?12*m/45:Math.min(30,12+18*(m-45)/135)}
 function planLogged(m){return m<=45?0:Math.min(30,30*(m-45)/210)}
 function lastActAgoMin(t){var e=elapsed(t),xs=[];(t.findings||[]).forEach(function(x){xs.push(x.at||0);if(x.doneAt!=null)xs.push(x.doneAt)});if(!xs.length)return e/60;return(e-Math.max.apply(null,xs))/60}
@@ -53,12 +53,13 @@ var STAGES=[
   {id:'push',a:180,b:255,n:'Push',d:'Close the gap to 30. Found 20–29 and stuck at 4:00 → run the MFR bot.'},
   {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality, final checks, submit or MFR before 4:30.'}
 ];
+function stageFor(t,m){return t&&t.huntDone&&m<45?STAGES[1]:stageOf(m)}
 function stageOf(m){for(var i=0;i<STAGES.length;i++)if(m<STAGES[i].b)return STAGES[i];return STAGES[STAGES.length-1]}
 /* pace model: learns your own capture and logging times from this task */
 function metrics(t){
   var e=elapsed(t)/60,c=counts(t),f=t.findings||[];
   var caps=f.map(function(x){return(x.at||0)/60}),lastCap=caps.length?Math.max.apply(null,caps):0;
-  var avgCap=c.all?Math.max(.5,lastCap/c.all):null;
+  var from=(t.trackFrom||0)/60,avgCap=c.tracked?Math.max(.5,(Math.max(lastCap,from)-from)/c.tracked):null;
   var logs=f.filter(function(x){return x.status==='done'&&x.startAt!=null&&x.doneAt!=null&&x.doneAt>x.startAt}).map(function(x){return(x.doneAt-x.startAt)/60});
   var avgLog=logs.length?Math.max(1,logs.reduce(function(a,b){return a+b},0)/logs.length):null;
   var cap=avgCap||4,lg=avgLog||6,left=Math.max(0,255-e),needLog=Math.max(0,30-c.n),needFind=Math.max(0,30-c.all),queue=c.all-c.n;
@@ -71,9 +72,10 @@ function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitl
 function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function doNow(t){
   if(t.status!=='active')return null;var M=metrics(t),e=M.e,c=M.c;
-  if(e<45)return c.all<10?{tone:'info',h:'Capture '+(10-c.all)+' more draft'+(10-c.all>1?'s':'')+' by 0:45',p:'About '+mmss((45-e)*60/Math.max(1,10-c.all))+' each. Type what you see and press Enter; details later.'}:{tone:'ok',h:'10+ found. Keep capturing until 0:45',p:'Then switch to logging: In progress → Flow → Feather.'};
+  if(e<45&&!t.huntDone)return c.all<10?{tone:'info',h:'Capture '+(10-c.all)+' more draft'+(10-c.all>1?'s':'')+' by 0:45',p:'About '+mmss((45-e)*60/Math.max(1,10-c.all))+' each. Type what you see and press Enter; details later.'}:{tone:'ok',h:'10+ found. Keep capturing until 0:45',p:'Then switch to logging: In progress → Flow → Feather.'};
   if(c.n>=30)return null;
   var pr=oldestProg(t);
+  if(e<45&&!pr&&!c.draft&&c.all<10)return{tone:'info',h:'Capture '+(10-c.all)+' more by 0:45',p:'You marked exploration done. Keep the found count at 10+ by 0:45.'};
   if(pr){var spent=(elapsed(t)-(pr.startAt||elapsed(t)))/60,tg=M.target;return spent<=tg?{tone:'info',h:'Finish “'+first(pr)+'” within '+mmss((tg-spent)*60),p:'Budget '+mmss(tg*60)+' a finding to reach 30 by 4:15. Run Flow, log in Feather, then mark it Done.'}:{tone:'warn',h:'Over budget on “'+first(pr)+'” by '+mmss((spent-tg)*60),p:'Wrap it up and mark it Done, or move it back to Not started and take the next one.'}}
   if(c.draft)return{tone:'warn',h:'Start the next draft now',p:c.draft+' waiting. Click its circle to move it to In progress, then run Flow and log it in Feather.'};
   return{tone:'info',h:'Queue empty · capture the next finding',p:'You need '+M.needFind+' more found. Budget about '+mmss(M.cap*60)+' to spot one.'};
@@ -138,18 +140,19 @@ function alertUser(t,title,body,tone){
 function askPermission(){
   if(!('Notification' in window)){toast('Not supported','This browser can\'t show desktop notifications. In-app alerts and sound still work.','warn');return}
   Notification.requestPermission().then(function(p){IDX.settings.notify=p==='granted';saveIdx();render();
-    if(p==='granted'){try{new Notification('CheckSet Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:40, 0:45, 1:30, 3:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
+    if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:40, 0:45, 1:30, 3:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
     else toast('Notifications blocked','Allow notifications for this site in Chrome\'s address bar (the icon left of the URL), then try again.','warn')})
 }
 function checkGates(){
+  if(!authFresh())return;
   allTasks().forEach(function(t){
     if(t.status!=='active'||!running(t))return;
     t.fired=t.fired||{};var m=elapsed(t)/60,changed=false;
     GATES.forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
     var c=counts(t),es=elapsed(t);
-    if(m>=45&&c.n<30){var pr=oldestProg(t),M=metrics(t);
+    if((m>=45||t.huntDone)&&c.n<30){var pr=oldestProg(t),M=metrics(t);
       if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Finish it or park it and start the next draft.','warn')}}
-      else if(c.draft){var idleFrom=Math.max(45*60,t.lastAct||0),idle=(es-idleFrom)/60;if(idle>=2&&(!t.nudgeAt||es-t.nudgeAt>=300)){t.nudgeAt=es;changed=true;alertUser(t,'Start the next finding · '+t.app,c.draft+' draft'+(c.draft>1?'s':'')+' waiting and nothing In progress for '+Math.round(idle)+' min. Move one to In progress, run Flow, log it in Feather.','warn')}}
+      else if(c.draft){var idleFrom=Math.max(t.huntDone?(t.huntAt||0):45*60,t.lastAct||0),idle=(es-idleFrom)/60;if(idle>=2&&(!t.nudgeAt||es-t.nudgeAt>=300)){t.nudgeAt=es;changed=true;alertUser(t,'Start the next finding · '+t.app,c.draft+' draft'+(c.draft>1?'s':'')+' waiting and nothing In progress for '+Math.round(idle)+' min. Move one to In progress, run Flow, log it in Feather.','warn')}}
     }
     if(c.n>=30&&c.b>=5&&c.fr>=5&&!t.fired.ready){t.fired.ready=1;changed=true;alertUser(t,'Ready to submit · '+t.app,'30 done with '+c.b+' Bugs and '+c.fr+' FRs. Runtime Quality, final checks, submit in Feather.','ok')}
     if(changed)saveTask(t);
@@ -160,7 +163,7 @@ function markPastGates(t){t.fired=t.fired||{};var m=elapsed(t)/60;GATES.forEach(
 /* ---------- toasts ---------- */
 function toast(h,p,tone,tid){var box=$('#toasts');if(!box){box=document.createElement('div');box.id='toasts';box.className='toasts';box.setAttribute('aria-live','polite');document.body.appendChild(box)}
   var el=document.createElement('div');el.className='toast';el.innerHTML='<b>'+esc(h)+'</b>'+(p?'<span>'+esc(p)+'</span>':'')+'<button type="button">Dismiss</button>';
-  el.querySelector('button').onclick=function(){el.remove()};box.appendChild(el);while(box.children.length>4)box.firstChild.remove();
+  el.querySelector('button').onclick=function(){el.remove()};box.appendChild(el);while(box.children.length>2)box.firstChild.remove();
   if(tone!=='crit'&&tone!=='warn')setTimeout(function(){el.remove()},2600)}
 
 /* ---------- view state ---------- */
@@ -169,20 +172,22 @@ if(IDX.cur&&!TASKS[IDX.cur]){IDX.cur=null;VIEW.mode='empty'}
 
 /* ---------- render ---------- */
 function render(){
-  var t=cur();
-  root.innerHTML='<div class="app">'+sideHtml()+'<main class="main" id="main"><div class="wrap">'+(VIEW.mode==='new'?newHtml():t?taskHtml(t):emptyHtml())+'</div></main></div>';
+  if(!authFresh()){root.innerHTML=gateScreen();var ae=$('#aEmail');if(ae&&!ae.value)ae.focus();return}
+  var t=cur(),keep={};['main','fscroll','tright'].forEach(function(id){var el=$('#'+id);if(el)keep[id]=el.scrollTop});
+  root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
   $$('.f textarea').forEach(grow);
-  tick();
+  Object.keys(keep).forEach(function(id){var el=$('#'+id);if(el)el.scrollTop=keep[id]});
+  syncBits();tick();
 }
 function sideHtml(){
   var q=VIEW.q.toLowerCase(),ts=allTasks().filter(function(t){if(!q)return true;return(t.app+' '+(t.featherId||'')+' '+(t.findings||[]).map(function(f){return f.text}).join(' ')+' '+(t.notes||'')).toLowerCase().indexOf(q)>=0});
   var act=ts.filter(function(t){return t.status==='active'||t.status==='mfr'}),hist=ts.filter(function(t){return!(t.status==='active'||t.status==='mfr')});
   var item=function(t){var c=counts(t);return'<button class="titem" data-a="open" data-id="'+t.id+'" aria-current="'+(t.id===IDX.cur&&VIEW.mode==='task')+'"><b>'+esc(t.app||'Untitled app')+'</b><span>'+hm(elapsed(t))+' · '+c.n+'/30 · '+OUT[t.status][0]+'</span><span>'+day(t.createdAt)+(t.featherId?' · '+t.featherId.slice(0,8):'')+'</span></button>'};
   var notif='Notification' in window?(Notification.permission==='granted'&&IDX.settings.notify?'Desktop reminders on':Notification.permission==='denied'?'Reminders blocked in Chrome':'Turn on desktop reminders'):'Desktop reminders unsupported';
-  return'<aside class="side" id="side"><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>CheckSet Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
+  return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:45, 1:30, 4:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -193,7 +198,7 @@ function newHtml(){
   '<label for="nApp">App name<input class="in" id="nApp" list="appList" placeholder="e.g. Salesforce clone" required><datalist id="appList">'+Object.keys(apps).map(function(a){return'<option value="'+esc(a)+'">'}).join('')+'</datalist><span class="hint" id="nAppHint">Same name as before lets the app check your past findings for duplicates.</span></label>'+
   '<label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
   '<label for="nTime">Hubstaff time on this task, as it shows right now<input class="in mono" id="nTime" placeholder="0:00:00" style="max-width:160px" inputmode="numeric"><span class="hint">Type it while Hubstaff keeps running: 1:23:45, 1:23 or just 12345. The seconds you take to type are added. Leave empty for 0:00:00.</span></label>'+
-  '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+
+  '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nLate" data-a="lateToggle"> I already started this task (forgot to log it here)</label>'+'<fieldset class="late" id="lateBox" hidden><legend class="lab">Work done before tracking</legend><p class="hint" style="margin:0">Hubstaff time is required above. These counts are added to your totals; findings you add here are tracked as usual.</p><div class="lgrid"><label for="nPreF">Found so far<input class="in mono" id="nPreF" type="number" min="0" value="0"></label><label for="nPreL">Logged in Feather<input class="in mono" id="nPreL" type="number" min="0" value="0"></label><label for="nPreB">…of those, Bugs<input class="in mono" id="nPreB" type="number" min="0" value="0"></label><label for="nPreR">…of those, FRs<input class="in mono" id="nPreR" type="number" min="0" value="0"></label></div><label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nHunt"> The 45-minute exploration is done</label></fieldset>'+
   '<p class="hint err" id="nErr">'+esc(VIEW.newErr)+'</p><div class="row"><button class="btn pri" type="submit">Start task</button><button class="btn" type="button" data-a="cancelNew">Cancel</button></div></form>';
 }
 function taskHtml(t){
@@ -206,24 +211,24 @@ function taskHtml(t){
   var tk=[0,45,90,180,240,270];
   var clock='<div class="card"><div class="clockcard"><div><div class="lab">AHT · synced to Hubstaff</div><div class="clock" id="clk">'+hms(e)+'<small> / 4:30:00</small></div><div class="lab" id="left" style="margin-top:6px">'+(e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60))+'</div></div>'+
     '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,90,180,240].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
-    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button><button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
+    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button>'+(elapsed(t)<45*60&&!t.huntDone?'<button class="btn sm" data-a="huntDone">Exploration done</button>':'')+'<button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
     (VIEW.sync?'<form class="row" id="syncForm"><label for="syncIn" class="hint">Look at Hubstaff and type its time</label><input class="in mono" id="syncIn" placeholder="1:23:45" inputmode="numeric" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="sync">Cancel</button><span class="hint" style="flex-basis:100%">No need to stop Hubstaff. The seconds you take to type are added automatically.</span></form>':'')+
     '</div></div><div class="counts"><div><b>'+c.all+'</b><span>found</span></div><div><b id="cN">'+c.n+'<small class="muted" style="font-size:14px">/30</small></b><span>logged (Done)</span></div><div><b style="color:var(--bug)">'+c.b+'</b><span>Bugs · min 5</span></div><div><b style="color:var(--fr)">'+c.fr+'</b><span>FRs · min 5</span></div><div><b>'+c.prog+'</b><span>in progress</span></div><div><b>'+c.draft+'</b><span>not started</span></div><div><b>'+(e>=300?(c.n/(e/3600)).toFixed(1):'—')+'</b><span>done / hour</span></div></div></div>';
   var fl=(t.findings||[]).filter(function(f){return VIEW.filter==='all'||f.status===VIEW.filter});
   var findings='<div class="card"><div class="row"><span class="lab">Findings · rapid hunt</span><span class="sp"></span><div class="seg" role="group" aria-label="Filter">'+[['all','All '+c.all],['draft','Draft '+c.draft],['progress','In progress '+c.prog],['done','Done '+c.n]].map(function(x){return'<button type="button" class="all" data-a="filter" data-f="'+x[0]+'" aria-pressed="'+(VIEW.filter===x[0])+'">'+x[1]+'</button>'}).join('')+'</div></div>'+
-    '<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="What did you see? Enter adds a draft" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
+    (t.pre||VIEW.editPre?'<div class="prebar">'+(VIEW.editPre?'<form class="row" id="preForm"><span class="lab">Before tracking</span><label class="hint">Found <input class="in mono sm" id="pF" type="number" min="0" value="'+((t.pre||{}).f||0)+'"></label><label class="hint">Logged <input class="in mono sm" id="pL" type="number" min="0" value="'+((t.pre||{}).l||0)+'"></label><label class="hint">Bugs <input class="in mono sm" id="pB" type="number" min="0" value="'+((t.pre||{}).b||0)+'"></label><label class="hint">FRs <input class="in mono sm" id="pR" type="number" min="0" value="'+((t.pre||{}).r||0)+'"></label><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editPre">Cancel</button></form>':'<span class="lab">Before tracking</span><span>'+(t.pre.f||0)+' found · '+(t.pre.l||0)+' logged ('+(t.pre.b||0)+' Bugs, '+(t.pre.r||0)+' FRs) · included in your totals</span><button class="btn sm ghost" data-a="editPre">Edit</button>')+'</div>':'<div class="prebar quiet"><button class="btn sm ghost" data-a="editPre">+ Add findings made before tracking</button></div>')+'<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="What did you see? Enter adds a draft" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
     '<div class="row hint"><span>Circle: not started → in progress (running Flow) → done (logged in Feather). Found counts every finding; logged counts Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
-    (VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div>';
+    '<div class="fscroll" id="fscroll">'+(VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div></div>';
   var gates='<div class="next '+s.tone+'" id="next"><span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
   var notes='<div class="card"><div class="row"><span class="lab">Scratch notes</span><span class="sp"></span><span class="saved" data-saved></span></div><textarea class="in notes" id="notes" data-in="notes" placeholder="Workflows to try, things to re-check, real-app comparisons…" aria-label="Scratch notes">'+esc(t.notes||'')+'</textarea></div>';
   var pq=VIEW.pastQ.toLowerCase(),pl=past.filter(function(p){return!pq||String(p.f.text).toLowerCase().indexOf(pq)>=0});
   var nTasks={};past.forEach(function(p){nTasks[p.task.id]=1});
   var pastHtml='<div class="card"><span class="lab">Past findings on '+esc(t.app||'this app')+'</span>'+(past.length?'<p class="hint" style="margin:0">'+Object.keys(nTasks).length+' earlier task'+(Object.keys(nTasks).length>1?'s':'')+', '+past.length+' findings. Drafts that match one get an amber flag.</p><input class="in" data-in="pastQ" id="pastQ" placeholder="Search past findings" value="'+esc(VIEW.pastQ)+'" aria-label="Search past findings"><div class="past">'+pl.slice(0,200).map(function(p){var first=String(p.f.text||'').split('\n')[0];return'<div class="pf '+p.f.type+'"><div class="m">'+day(p.task.createdAt)+' · '+(p.f.type==='bug'?'Bug':p.f.type==='fr'?'FR':'?')+' · '+(p.f.status==='done'?'done':p.f.status)+'</div>'+esc(first||'(empty)')+'</div>'}).join('')+'</div>':'<p class="hint" style="margin:0">'+(key?'First task on this app. Next time you claim it, this list shows what you already filed.':'Name the app to compare with earlier tasks.')+'</p>')+'</div>';
-  return nb+head+'<div class="mbar" id="mbar">'+mbarHtml(t)+'</div><div class="cols"><div class="colstack">'+clock+findings+'</div><div class="colstack">'+gates+notes+pastHtml+'</div></div>';
+  return'<div class="tview"><section class="tcenter" aria-label="Findings">'+findings.replace('<div class="card">','<div class="card fcard">')+'</section><aside class="tright" id="tright" aria-label="Task, clock and rules"><div class="rtop">'+nb+head+'<div class="mbar" id="mbar">'+mbarHtml(t)+'</div>'+clock+'</div><div class="rrest">'+gates+notes+pastHtml+'</div></aside></div>';
 }
 function mbarHtml(t){
-  var e=elapsed(t),m=e/60,st=stageOf(m),c=counts(t),dn=doNow(t),nx=null;for(var i=0;i<GATES.length;i++)if(GATES[i].m>m){nx=GATES[i];break}
+  var e=elapsed(t),m=e/60,st=stageFor(t,m),c=counts(t),dn=doNow(t),nx=null;for(var i=0;i<GATES.length;i++)if(GATES[i].m>m){nx=GATES[i];break}
   var segs=STAGES.map(function(x){var w=(x.b-x.a)/AHT*100,on=x===st,pct=on?Math.min(100,(m-x.a)/(x.b-x.a)*100):m>=x.b?100:0;return'<div class="seg2'+(on?' on':m>=x.b?' past':'')+'" style="flex:'+w+' 1 0"><i style="width:'+pct+'%"></i><b>'+x.n+'</b><span>'+hm(x.a*60)+'–'+hm(x.b*60)+'</span></div>'}).join('');
   return'<div class="mrow"><div class="mclock"><span class="lab">AHT · '+(running(t)?'running':'paused')+'</span><b class="mono">'+hms(e)+'</b><span class="mono muted">'+(e<AHT*60?hm(AHT*60-e)+' left of 4:30':'over AHT by '+hm(e-AHT*60))+'</span></div>'+
   '<div class="mstage"><div class="segs">'+segs+'</div><div class="mnow"><span class="pill info">Stage · '+st.n+'</span><span class="mdesc">'+esc(st.d)+'</span><span class="mono mends">'+(m<st.b?'ends in '+mmss((st.b-m)*60):'')+'</span></div></div>'+
@@ -264,12 +269,12 @@ function tick(){
   var t=cur();
   if(t&&VIEW.mode==='task'){var e=elapsed(t),c=$('#clk'),b=$('#clkBar'),l=$('#left');
     if(c)c.innerHTML=hms(e)+'<small> / 4:30:00</small>';if(b)b.style.width=Math.min(100,e/(AHT*60)*100)+'%';if(l)l.textContent=e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60);
-    document.title=hm(e)+' · '+counts(t).n+'/30 · '+(t.app||'Task')+' · CheckSet Tasker';
+    document.title=hm(e)+' · '+counts(t).n+'/30 · '+(t.app||'Task')+' · AI Trainer Tasker';
     var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
     var mb=$('#mbar');if(mb)mb.innerHTML=mbarHtml(t);
     if(Math.floor(e)%5===0){var sg=$('#strat');if(sg)sg.innerHTML=stratHtml(t)}
     var M=null;$$('[data-ft]').forEach(function(el){var f=findF(t,el.dataset.ft);if(!f)return;M=M||metrics(t);var sp=e-(f.startAt||e),tg=M.target*60;el.textContent=mmss(sp)+' / '+mmss(tg);el.className='ftimer'+(sp>tg?' over':'')});
-  }else document.title='CheckSet Tasker';
+  }else document.title='AI Trainer Tasker';
 }
 setInterval(tick,1000);
 setInterval(checkGates,15000);
@@ -286,20 +291,27 @@ document.addEventListener('click',function(ev){
   if(a==='menu'){var sd=$('#side');if(sd)sd.classList.toggle('open');return}
   if(a==='notify'){askPermission();return}
   if(a==='export'){exportData();return}
+  if(a==='otpBack'){VIEW.otpEmail=null;render();return}
+  if(a==='otpResend'){sendCode(VIEW.otpEmail);return}
+  if(a==='lateToggle'){var lb=$('#lateBox');if(lb)lb.hidden=!b.checked;return}
+  if(a==='huntDone'&&t){t.huntDone=true;t.huntAt=elapsed(t);saveTask(t);render();toast('Exploration done','Stage moved to Log: In progress → Flow → Feather.','ok');return}
+  if(a==='editPre'&&t){VIEW.editPre=!VIEW.editPre;render();return}
+  if(a==='collapse'){IDX.settings.noside=!IDX.settings.noside;saveIdx();render();return}
+  if(a==='signout'){IDX.authAt=0;saveIdx();if(SB)SB.auth.signOut();USER=null;render();return}
   if(!t)return;
   if(a==='copyId'){var done=function(){toast('Copied',t.featherId,'ok')};if(navigator.clipboard)navigator.clipboard.writeText(t.featherId).then(done,function(){prompt('Copy the Feather ID',t.featherId)});return}
   if(a==='editHead'){VIEW.editHead=!VIEW.editHead;render();return}
-  if(a==='run'){running(t)?pause(t):resume(t);saveTask(t);render();return}
+  if(a==='run'){running(t)?pause(t):resume(t);t.clockU=Date.now();saveTask(t);render();return}
   if(a==='sync'){VIEW.sync=!VIEW.sync;VIEW.syncT0=null;render();var si=$('#syncIn');if(si)si.focus();return}
-  if(a==='nudge'){setElapsed(t,Math.max(0,elapsed(t)+(+b.dataset.d)));markPastGates(t);saveTask(t);render();return}
+  if(a==='nudge'){setElapsed(t,Math.max(0,elapsed(t)+(+b.dataset.d)));t.clockU=Date.now();markPastGates(t);saveTask(t);render();return}
   if(a==='toggleDone'){IDX.settings.showDone=!IDX.settings.showDone;saveIdx();render();return}
   if(a==='filter'){VIEW.filter=b.dataset.f;render();return}
   if(a==='addType'){VIEW.addType=b.dataset.t;$$('[data-a="addType"]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});var ai=$('#addIn');if(ai)ai.focus();return}
-  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;if(f.status==='done')toast('Logged · '+counts(t).n+' done','Find it under Done at the bottom of the list.','ok');checkGates();return}
-  if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';saveTask(t);render();return}
-  if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
-  if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();toast('Task deleted','','ok');return}
-  if(a==='end'){var s=b.dataset.s;if(s==='active'){t.status='active';resume(t)}else{pause(t);t.status=s;t.endedAt=Date.now()}saveTask(t);render();
+  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;f.u=Date.now();saveTask(t);render();if(f.status==='done')toast('Logged · '+counts(t).n+' done','Find it under Done at the bottom of the list.','ok');checkGates();return}
+  if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';g.u=Date.now();saveTask(t);render();return}
+  if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});(t.delF=t.delF||[]).push(b.dataset.id);VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
+  if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});var did=t.id;IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();pushDelete(did);toast('Task deleted','','ok');return}
+  if(a==='end'){var s=b.dataset.s;t.clockU=Date.now();if(s==='active'){t.status='active';resume(t)}else{pause(t);t.status=s;t.endedAt=Date.now()}saveTask(t);render();
     toast(s==='mfr'?'MFR submitted':s==='submitted'?'Marked submitted':s==='unclaimed'?'Marked unclaimed':s==='released'?'Released':'Back in progress',s==='mfr'?'Keep it In Progress in Feather. You may claim 1 more task.':'','ok');return}
 });
 function findF(t,id){return(t.findings||[]).find(function(x){return x.id===id})}
@@ -309,28 +321,33 @@ document.addEventListener('input',function(ev){
   if(k==='q'){VIEW.q=el.value;var pos=el.selectionStart;var side=$('#side');var tmp=document.createElement('div');tmp.innerHTML=sideHtml();side.replaceWith(tmp.firstChild);var nq=$('#tq');nq.focus();nq.setSelectionRange(pos,pos);return}
   if(k==='sound'){IDX.settings.sound=el.checked;saveIdx();return}
   if(!t)return;
-  if(k==='notes'){t.notes=el.value;saveTask(t);return}
+  if(k==='notes'){t.notes=el.value;t.notesU=Date.now();saveTask(t);return}
   if(k==='pastQ'){VIEW.pastQ=el.value;var p=el.selectionStart;render();var pi=$('#pastQ');if(pi){pi.focus();pi.setSelectionRange(p,p)}return}
-  if(k==='ftext'){var f=findF(t,el.dataset.id);if(!f)return;f.text=el.value;saveTask(t);grow(el);clearTimeout(dupTimers[f.id]);dupTimers[f.id]=setTimeout(function(){var card=el.closest('.f');if(!card)return;var d=dupOf(t,f);card.classList.toggle('dup',!!d);card.querySelector('.dupbox').innerHTML=dupHtml(d)},400)}
+  if(k==='ftext'){var f=findF(t,el.dataset.id);if(!f)return;f.text=el.value;f.u=Date.now();saveTask(t);grow(el);clearTimeout(dupTimers[f.id]);dupTimers[f.id]=setTimeout(function(){var card=el.closest('.f');if(!card)return;var d=dupOf(t,f);card.classList.toggle('dup',!!d);card.querySelector('.dupbox').innerHTML=dupHtml(d)},400)}
 });
 document.addEventListener('change',function(ev){if(ev.target.id==='imp'&&ev.target.files[0])importData(ev.target.files[0])});
 document.addEventListener('submit',function(ev){
   var f=ev.target;ev.preventDefault();var t=cur();
+  if(f.id==='preForm'&&t){var nv=function(id){return Math.max(0,parseInt($(id).value,10)||0)};t.pre={f:nv('#pF'),l:nv('#pL'),b:nv('#pB'),r:nv('#pR')};if(t.pre.l>t.pre.f)t.pre.f=t.pre.l;VIEW.editPre=false;saveTask(t);render();return}
+  if(f.id==='authForm'){doAuth();return}
   if(f.id==='newForm'){
     var app=$('#nApp').value.trim(),url=$('#nUrl').value.trim(),fid=parseFeather(url),sec=$('#nTime').value.trim()?parseTime($('#nTime').value):0;if(sec!=null&&$('#nRun').checked&&VIEW.syncT0)sec+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;
     if(!app){VIEW.newErr='Enter the app name.';$('#nErr').textContent=VIEW.newErr;return}
     if(sec==null){$('#nErr').textContent='Enter the Hubstaff time as h:mm or h:mm:ss, for example 0:12:30.';return}
+    var late=$('#nLate').checked;if(late&&!$('#nTime').value.trim()){$('#nErr').textContent='Enter the time Hubstaff shows for this task. It is required when the task is already started.';$('#nTime').focus();return}
+    var num=function(id){return Math.max(0,parseInt($(id).value,10)||0)},pre=late?{f:num('#nPreF'),l:num('#nPreL'),b:num('#nPreB'),r:num('#nPreR')}:null;
+    if(pre&&pre.l>pre.f)pre.f=pre.l;if(pre&&pre.b+pre.r>pre.l){$('#nErr').textContent='Bugs plus FRs can\'t be more than the number logged.';return}
     var ex=fid&&allTasks().find(function(x){return x.featherId===fid});
     if(ex){$('#nErr').innerHTML='This Feather task is already logged. <button class="btn sm" type="button" data-a="open" data-id="'+ex.id+'">Open it</button>';return}
-    var nt={id:uid(),app:app,featherUrl:url,featherId:fid,createdAt:Date.now(),status:'active',clock:{base:sec,at:$('#nRun').checked?Date.now():null},findings:[],notes:'',fired:{}};
+    var nt={id:uid(),app:app,featherUrl:url,featherId:fid,createdAt:Date.now(),status:'active',clock:{base:sec,at:$('#nRun').checked?Date.now():null},clockU:Date.now(),findings:[],notes:'',fired:{},trackFrom:sec,pre:pre||undefined,huntDone:late&&$('#nHunt').checked?true:undefined,huntAt:late&&$('#nHunt').checked?sec:undefined};
     markPastGates(nt);TASKS[nt.id]=nt;IDX.ids.push(nt.id);IDX.cur=nt.id;saveIdx();saveTask(nt);VIEW.mode='task';VIEW.filter='all';
     try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
     render();var ai=$('#addIn');if(ai)ai.focus();
     var prior=pastFor(nt).length;if(prior)toast('You\'ve tested '+app+' before',prior+' past findings are listed on the right. New drafts that match get flagged.','info');
     return}
   if(!t)return;
-  if(f.id==='addForm'){var inp=$('#addIn'),v=inp.value.trim();if(!v)return;t.findings=t.findings||[];t.findings.unshift({id:uid(),type:VIEW.addType,status:'draft',text:v,at:elapsed(t),createdAt:Date.now()});saveTask(t);if(VIEW.filter==='done'||VIEW.filter==='progress')VIEW.filter='all';render();var ni=$('#addIn');if(ni)ni.focus();return}
-  if(f.id==='syncForm'){var s=parseTime($('#syncIn').value);if(s!=null&&running(t)&&VIEW.syncT0)s+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;if(s==null){toast('Check the time','Use h:mm or h:mm:ss, for example 1:23:45.','warn');return}setElapsed(t,s);markPastGates(t);VIEW.sync=false;saveTask(t);render();toast('Synced to Hubstaff','Clock now '+hms(elapsed(t))+(running(t)?' and running.':' (paused).'),'ok');return}
+  if(f.id==='addForm'){var inp=$('#addIn'),v=inp.value.trim();if(!v)return;t.findings=t.findings||[];t.findings.unshift({id:uid(),type:VIEW.addType,status:'draft',text:v,at:elapsed(t),createdAt:Date.now(),u:Date.now()});saveTask(t);if(VIEW.filter==='done'||VIEW.filter==='progress')VIEW.filter='all';render();var ni=$('#addIn');if(ni)ni.focus();return}
+  if(f.id==='syncForm'){var s=parseTime($('#syncIn').value);if(s!=null&&running(t)&&VIEW.syncT0)s+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;if(s==null){toast('Check the time','Use h:mm or h:mm:ss, for example 1:23:45.','warn');return}setElapsed(t,s);t.clockU=Date.now();markPastGates(t);VIEW.sync=false;saveTask(t);render();toast('Synced to Hubstaff','Clock now '+hms(elapsed(t))+(running(t)?' and running.':' (paused).'),'ok');return}
   if(f.id==='headForm'){t.app=$('#eApp').value.trim()||t.app;t.featherUrl=$('#eUrl').value.trim();t.featherId=parseFeather(t.featherUrl);VIEW.editHead=false;saveTask(t);render();return}
 });
 document.addEventListener('input',function(ev){
@@ -347,9 +364,124 @@ document.addEventListener('keydown',function(ev){
 window.addEventListener('storage',function(ev){if(!ev.key||ev.key.indexOf(P)!==0||!document.hidden)return;IDX=lsGet('index',IDX);loadTasks();render()});
 
 /* ---------- backup ---------- */
-function exportData(){var data={app:'CheckSet Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='checkset-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}
-function importData(file){var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result),n=0;(d.tasks||[]).forEach(function(t){if(!t||!t.id)return;var mine=TASKS[t.id];if(!mine||(t.updatedAt||0)>(mine.updatedAt||0)){TASKS[t.id]=t;if(IDX.ids.indexOf(t.id)<0)IDX.ids.push(t.id);lsSet('t.'+t.id,t);n++}});saveIdx();render();toast('Backup imported',n+' task'+(n===1?'':'s')+' added or updated.','ok')}catch(e){toast('Import failed','That file is not a CheckSet Tasker backup.','crit')}};r.readAsText(file)}
+function exportData(){var data={app:'AI Trainer Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ai-trainer-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}
+function importData(file){var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result),n=0;(d.tasks||[]).forEach(function(t){if(!t||!t.id)return;var mine=TASKS[t.id];if(!mine||(t.updatedAt||0)>(mine.updatedAt||0)){TASKS[t.id]=t;if(IDX.ids.indexOf(t.id)<0)IDX.ids.push(t.id);lsSet('t.'+t.id,t);if(USER)pushQ[t.id]=1;n++}});saveIdx();render();pushNow();toast('Backup imported',n+' task'+(n===1?'':'s')+' added or updated.','ok')}catch(e){toast('Import failed','That file is not an AI Trainer Tasker backup.','crit')}};r.readAsText(file)}
 
-render();checkGates();
+var LOGO='<svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+/* ---------- cloud sync (Supabase) ---------- */
+var SB_URL='https://acxzpmljhcxlpvkteihn.supabase.co',SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHpwbWxqaGN4bHB2a3RlaWhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyODgxODksImV4cCI6MjEwOTg2NDE4OX0.2QJ8O6cPdKhxpM-Z4fv8cSH2SF8FCXKw3Ka_XVG2UNg';
+var SB=null,USER=null,SYNC={state:'off',at:null,err:''},pushQ={},pushTimer=null,chan=null,pendingRender=false;
+function loadScript(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
+function initCloud(){
+  loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js').then(function(){
+    SB=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'cst.v1.auth'}});
+    SB.auth.getSession().then(function(r){setUser(r.data&&r.data.session&&r.data.session.user)});
+    SB.auth.onAuthStateChange(function(ev,session){setUser(session&&session.user)});
+  }).catch(function(){SYNC.state='unavailable';AUTH_READY=true;render()});
+}
+var DAY=24*3600*1000,AUTH_READY=false;
+function authFresh(){return !!(USER&&IDX.authAt&&Date.now()-IDX.authAt<DAY)}
+function setUser(u){
+  AUTH_READY=true;
+  if(u&&!(IDX.authAt&&Date.now()-IDX.authAt<DAY)){USER=null;if(SB)SB.auth.signOut();render();return}
+  var was=USER&&USER.id;USER=u||null;if(!USER||USER.id!==was)render();
+  if(USER&&USER.id!==was){SYNC.state='syncing';syncBits();fullSync().then(subscribe)}
+  else if(!USER&&was){SYNC.state='off';if(chan&&SB){SB.removeChannel(chan);chan=null}syncBits()}
+  else syncBits();
+}
+function mergeTask(a,b){
+  if(!a)return b;if(!b)return a;
+  var newer=(b.updatedAt||0)>(a.updatedAt||0)?b:a,older=newer===a?b:a,m=JSON.parse(JSON.stringify(newer)),tomb={},fs={};
+  (a.delF||[]).concat(b.delF||[]).forEach(function(id){tomb[id]=1});m.delF=Object.keys(tomb);
+  [older,newer].forEach(function(t){(t.findings||[]).forEach(function(f){var c=fs[f.id];if(!c||(f.u||0)>=(c.u||0))fs[f.id]=f})});
+  m.findings=Object.keys(fs).filter(function(id){return!tomb[id]}).map(function(id){return JSON.parse(JSON.stringify(fs[id]))}).sort(function(x,y){return(y.createdAt||0)-(x.createdAt||0)});
+  var nA=a.notesU||0,nB=b.notesU||0;m.notes=nB>nA?b.notes:a.notes;m.notesU=Math.max(nA,nB);
+  var cA=a.clockU||0,cB=b.clockU||0;m.clock=JSON.parse(JSON.stringify(cB>cA?b.clock:a.clock));m.clockU=Math.max(cA,cB);
+  m.fired=Object.assign({},a.fired||{},b.fired||{});m.updatedAt=Math.max(a.updatedAt||0,b.updatedAt||0);
+  return m;
+}
+function storeLocal(t){TASKS[t.id]=t;if(IDX.ids.indexOf(t.id)<0)IDX.ids.push(t.id);lsSet('t.'+t.id,t)}
+function dropLocal(id){if(!TASKS[id])return;delete TASKS[id];IDX.ids=IDX.ids.filter(function(x){return x!==id});try{localStorage.removeItem(P+'t.'+id)}catch(e){}if(IDX.cur===id){IDX.cur=null;VIEW.mode='empty'}}
+function applyRemote(row){
+  if(row.deleted){dropLocal(row.id);return}
+  var merged=mergeTask(TASKS[row.id],row.data);storeLocal(merged);
+}
+function fullSync(){
+  if(!SB||!USER)return Promise.resolve();
+  return SB.from('tasks').select('id,data,deleted,updated_at').then(function(r){
+    if(r.error)throw r.error;var seen={};
+    (r.data||[]).forEach(function(row){seen[row.id]=1;applyRemote(row)});
+    saveIdx();allTasks().forEach(function(t){pushQ[t.id]=1});
+    return pushNow();
+  }).then(function(){softRender()}).catch(function(e){SYNC.state='error';SYNC.err=e.message||String(e);syncBits()});
+}
+function queuePush(id){if(!USER)return;pushQ[id]=1;clearTimeout(pushTimer);pushTimer=setTimeout(pushNow,1200);SYNC.state='pending';syncBits()}
+function pushNow(){
+  if(!SB||!USER)return Promise.resolve();var ids=Object.keys(pushQ);if(!ids.length){SYNC.state='synced';SYNC.at=Date.now();syncBits();return Promise.resolve()}
+  pushQ={};
+  return SB.from('tasks').select('id,data,deleted').in('id',ids).then(function(r){
+    if(r.error)throw r.error;var remote={};(r.data||[]).forEach(function(x){remote[x.id]=x});
+    var rows=[];ids.forEach(function(id){var loc=TASKS[id];
+      if(!loc){rows.push({id:id,data:{id:id},deleted:true,updated_at:new Date().toISOString()});return}
+      if(remote[id]&&remote[id].deleted){dropLocal(id);return}
+      var m=remote[id]?mergeTask(loc,remote[id].data):loc;if(m!==loc)storeLocal(m);
+      rows.push({id:id,data:m,deleted:false,updated_at:new Date(m.updatedAt||Date.now()).toISOString()})});
+    if(!rows.length)return{error:null};
+    return SB.from('tasks').upsert(rows);
+  }).then(function(r){if(r&&r.error)throw r.error;SYNC.state='synced';SYNC.at=Date.now();SYNC.err='';syncBits()})
+  .catch(function(e){ids.forEach(function(id){pushQ[id]=1});SYNC.state=navigator.onLine===false?'offline':'error';SYNC.err=e.message||String(e);syncBits()});
+}
+function pushDelete(id){if(!USER)return;pushQ[id]=1;pushNow()}
+function subscribe(){
+  if(!SB||!USER||chan)return;
+  chan=SB.channel('tasks-'+USER.id).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:'user_id=eq.'+USER.id},function(p){
+    var row=p.new&&p.new.id?p.new:null;if(!row)return;applyRemote(row);saveIdx();softRender();
+  }).subscribe();
+}
+function typing(){var a=document.activeElement;return!!(a&&root.contains(a)&&/^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName))}
+function softRender(){if(typing()){pendingRender=true;return}pendingRender=false;render()}
+document.addEventListener('focusout',function(){setTimeout(function(){if(pendingRender&&!typing())softRender()},300)});
+window.addEventListener('online',function(){if(USER){SYNC.state='syncing';syncBits();fullSync()}});
+setInterval(function(){if(USER&&Object.keys(pushQ).length&&SYNC.state!=='pending')pushNow()},30000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&USER)fullSync()});
+function syncLabel(){
+  if(SYNC.state==='unavailable')return'Cloud sync unavailable (couldn\'t load). Saved on this device.';
+  if(!USER)return'Cloud sync off. Saved on this device only.';
+  var who=USER.email||'';
+  if(SYNC.state==='synced')return'Synced '+new Date(SYNC.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · '+who;
+  if(SYNC.state==='pending'||SYNC.state==='syncing')return'Syncing… · '+who;
+  if(SYNC.state==='offline')return'Offline. Saved here; will sync when back online.';
+  return'Sync problem: '+SYNC.err+'. Saved on this device.';
+}
+function syncBits(){var el=$('#syncLab');if(el){el.textContent=syncLabel();el.className='synclab '+(USER?(SYNC.state==='synced'?'ok':SYNC.state==='error'?'err':''):'')}var b=$('#syncBtn');if(b)b.textContent=USER?'Sign out':'Turn on cloud sync'}
+function authHtml(){
+  var step=VIEW.otpEmail?'code':'email';
+  return'<div class="gate-wrap"><form class="card form" id="authForm" autocomplete="on"><div class="brand" style="padding:0">'+LOGO+'<div><b>AI Trainer Tasker</b><span class="lab">Sign in with your email</span></div></div>'+
+  (step==='email'?'<p class="hint" style="margin:0">We\'ll email you a one-time code. Use the same email on your computers and phone to see the same tasks. You stay signed in for 24 hours on each device.</p><label for="aEmail">Email<input class="in" id="aEmail" type="email" autocomplete="email" required></label><p class="hint err" id="aErr"></p><div class="row"><button class="btn pri" type="submit">Send code</button></div>':
+  '<p class="hint" style="margin:0">Code sent to <b>'+esc(VIEW.otpEmail)+'</b>. Check your inbox (and spam), then type the code.</p><label for="aCode">One-time code<input class="in mono" id="aCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required style="font-size:20px;letter-spacing:.2em"></label><p class="hint err" id="aErr"></p><div class="row"><button class="btn pri" type="submit">Sign in</button><button class="btn" type="button" data-a="otpBack">Use another email</button><button class="btn ghost" type="button" data-a="otpResend">Send a new code</button></div>')+
+  '</form></div>';
+}
+function otpErr(e){var m=e&&e.message||String(e);return/Database error|closed|not allowed|Signups/i.test(m)?'That email can\'t sign in here.':/rate|seconds|too many/i.test(m)?'Too many codes requested. Wait a minute, then try again. ('+m+')':/expired|invalid/i.test(m)?'That code is wrong or expired. Check it, or send a new code.':m}
+function sendCode(em){
+  var err=$('#aErr');if(!SB){err.textContent='Sign-in service couldn\'t load. Check your connection and refresh.';return}
+  err.className='hint';err.textContent='Sending…';
+  SB.auth.signInWithOtp({email:em,options:{shouldCreateUser:true}}).then(function(r){if(r.error)throw r.error;VIEW.otpEmail=em;render();var c=$('#aCode');if(c)c.focus()}).catch(function(e){var x=$('#aErr');if(x){x.className='hint err';x.textContent=otpErr(e)}});
+}
+function doAuth(){
+  if(!VIEW.otpEmail){var em=$('#aEmail').value.trim().toLowerCase();if(em)sendCode(em);return}
+  var code=$('#aCode').value.replace(/\s+/g,''),err=$('#aErr');if(!code)return;
+  err.className='hint';err.textContent='Checking…';IDX.authAt=Date.now();saveIdx();
+  SB.auth.verifyOtp({email:VIEW.otpEmail,token:code,type:'email'}).then(function(r){
+    if(r.error)throw r.error;VIEW.otpEmail=null;VIEW.mode=cur()?'task':'empty';setUser(r.data.user);render();toast('Signed in','Synced across your devices for the next 24 hours.','ok');
+  }).catch(function(e){IDX.authAt=0;saveIdx();err.className='hint err';err.textContent=otpErr(e)});
+}
+function gateScreen(){
+  if(!AUTH_READY)return'<div class="gate-wrap"><p class="muted">Checking your sign-in…</p></div>';
+  if(SYNC.state==='unavailable')return'<div class="gate-wrap"><div class="card form"><b>Can\'t reach the sign-in service</b><p class="hint" style="margin:0">Check your connection and refresh. Your work is still saved on this device.</p></div></div>';
+  return authHtml();
+}
+setInterval(function(){if(USER&&!authFresh()){USER=null;if(SB)SB.auth.signOut();render();toast('Signed out','24 hours passed. Sign in again with your email.','warn')}},60000);
+
+render();initCloud();checkGates();
 var boot=document.getElementById('bootMsg');if(boot)boot.remove();
 })();
