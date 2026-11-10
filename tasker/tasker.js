@@ -60,7 +60,7 @@ function metrics(t){
   var caps=f.map(function(x){return(x.at||0)/60}),lastCap=caps.length?Math.max.apply(null,caps):0;
   var avgCap=c.all?Math.max(.5,lastCap/c.all):null;
   var logs=f.filter(function(x){return x.status==='done'&&x.startAt!=null&&x.doneAt!=null&&x.doneAt>x.startAt}).map(function(x){return(x.doneAt-x.startAt)/60});
-  var avgLog=logs.length?logs.reduce(function(a,b){return a+b},0)/logs.length:null;
+  var avgLog=logs.length?Math.max(1,logs.reduce(function(a,b){return a+b},0)/logs.length):null;
   var cap=avgCap||4,lg=avgLog||6,left=Math.max(0,255-e),needLog=Math.max(0,30-c.n),needFind=Math.max(0,30-c.all),queue=c.all-c.n;
   var capNeed=needFind*cap,logBudget=needLog?(left-capNeed)/needLog:0;
   var proj=c.n+Math.min(queue,left/lg)+Math.max(0,left-queue*lg)/(lg+cap);
@@ -91,7 +91,7 @@ function nextStep(t){
   if(e>=240)return{tone:'warn',h:F>=30?'4:00 · log the rest and submit':F>=20?'4:00 · '+F+' found: run the MFR bot if stuck':'Under 20 found at 4:00 · run the MFR bot',p:'Found '+F+', logged '+n+'. Start Checkset Minimum Findings Request with your count and time, then follow the Activity tab.'};
   if(e>=45&&F<10)return{tone:'crit',h:'Under 10 found past 0:45',p:'The rule is to release (unclaim in Feather) inside the 45-minute window when you\'re under 10 or the app can\'t yield 20+. Unclaim now, or ask your HDM in your POD thread.'};
   if(e>=90&&F<20){var ago=lastActAgoMin(t);if(ago>=20)return{tone:'warn',h:'Stalled at '+F+' found · run the MFR bot',p:'Nothing new for '+Math.round(ago)+' min. In the 1:30–3:00 window, 10–19 and stalled means run the MFR bot.'}}
-  if(e<45)return{tone:'info',h:'Hunt window · '+hm((45-e)*60)+' left',p:'Found '+F+' of the 10 needed by 0:45. Runtime won\'t launch, crashes or errors? Tell your HDM in your POD thread and unclaim in Feather. No rating or tags.'};
+  if(e<45)return{tone:'info',h:'Hunt window · '+mmss((45-e)*60)+' left',p:'Found '+F+' of the 10 needed by 0:45. Runtime won\'t launch, crashes or errors? Tell your HDM in your POD thread and unclaim in Feather. No rating or tags.'};
   var gF=Math.round(planFound(e)-F),gL=Math.round(planLogged(e)-n);
   if(gF<=1&&gL<=1)return{tone:'ok',h:'On pace',p:'Found '+F+' (plan '+Math.round(planFound(e))+') · logged '+n+' (plan '+Math.round(planLogged(e))+').'};
   return{tone:'warn',h:gF>1?'Behind on finding by '+gF:'Behind on logging by '+gL,p:'Found '+F+' (plan '+Math.round(planFound(e))+') · logged '+n+' (plan '+Math.round(planLogged(e))+').'};
@@ -237,7 +237,7 @@ function stratHtml(t){
   return'<span class="lab">Your pace · learned from this task</span>'+
   '<div class="sgrid"><div class="'+tone(c.all,M.pf)+'"><b class="mono">'+c.all+' / '+Math.round(M.pf)+'</b><span>found / plan now</span></div><div class="'+tone(c.n,M.pl)+'"><b class="mono">'+c.n+' / '+Math.round(M.pl)+'</b><span>logged / plan now</span></div>'+
   '<div><b class="mono">'+(M.avgCap?mmss(M.avgCap*60):'—')+'</b><span>avg to capture one</span></div><div><b class="mono">'+(M.avgLog?mmss(M.avgLog*60):'—')+'</b><span>avg to log one</span></div>'+
-  '<div class="'+(c.n>=30?'':M.feasible?'ok':'crit')+'"><b class="mono">'+(c.n>=30?'—':M.feasible?mmss(M.target*60):'under 1:30')+'</b><span>budget per remaining finding</span></div><div><b class="mono">'+(c.n>=30?c.n:M.proj)+'</b><span>projected logged at 4:15</span></div></div>'+
+  '<div class="'+(c.n>=30?'':M.feasible?'ok':'crit')+'"><b class="mono">'+(c.n>=30?'—':M.feasible?mmss(M.target*60):'under 1:30')+'</b><span>budget per remaining finding</span></div><div><b class="mono">'+(c.n>=30?c.n:M.proj>=30?'30+':M.proj)+'</b><span>projected logged at 4:15</span></div></div>'+
   '<p class="hint" style="margin:0">'+esc(verdict)+(M.avgLog?'':' Logging time is estimated at 6:00 until you finish your first In progress → Done.')+'</p>';
 }
 function groupedHtml(t,fl,c){
@@ -295,7 +295,7 @@ document.addEventListener('click',function(ev){
   if(a==='toggleDone'){IDX.settings.showDone=!IDX.settings.showDone;saveIdx();render();return}
   if(a==='filter'){VIEW.filter=b.dataset.f;render();return}
   if(a==='addType'){VIEW.addType=b.dataset.t;$$('[data-a="addType"]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});var ai=$('#addIn');if(ai)ai.focus();return}
-  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;toast(f.status==='done'?'Moved to Done':f.status==='progress'?'Moved to In progress':'Moved back to Not started',f.status==='done'?'Find it under Done at the bottom of the list.':'','ok');checkGates();return}
+  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;if(f.status==='done')toast('Logged · '+counts(t).n+' done','Find it under Done at the bottom of the list.','ok');checkGates();return}
   if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';saveTask(t);render();return}
   if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
   if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();toast('Task deleted','','ok');return}
