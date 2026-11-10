@@ -14,7 +14,7 @@ function parseFeather(u){u=String(u||'');var m=u.match(/\/tasks\/([0-9a-f]{8}-[0
 function appKey(a){return String(a||'').toLowerCase().replace(/\s+/g,' ').trim()}
 function hms(s){s=Math.max(0,Math.floor(s));return Math.floor(s/3600)+':'+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function hm(s){s=Math.max(0,Math.floor(s));return Math.floor(s/3600)+':'+String(Math.floor(s/60)%60).padStart(2,'0')}
-function parseTime(v){v=String(v||'').trim();var m=v.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);if(m)return(+m[1])*3600+(+m[2])*60+(+(m[3]||0));m=v.match(/^(\d{1,3})$/);if(m)return(+m[1])*60;return null}
+function parseTime(v){v=String(v||'').trim();var m=v.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);if(m)return(+m[1])*3600+(+m[2])*60+(+(m[3]||0));m=v.match(/^(\d{3,6})$/);if(m){var d=v.padStart(6,'0');return(+d.slice(0,2))*3600+(+d.slice(2,4))*60+(+d.slice(4,6))}m=v.match(/^(\d{1,2})$/);if(m)return(+m[1])*60;return null}
 function day(ts){return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
 
 /* ---------- storage ---------- */
@@ -41,31 +41,64 @@ function resume(t){if(!t.clock.at)t.clock.at=Date.now()}
 
 /* ---------- counts & rules (CheckSet guidelines, Nov 2026) ---------- */
 function counts(t){var f=t.findings||[],d=f.filter(function(x){return x.status==='done'});return{n:d.length,b:d.filter(function(x){return x.type==='bug'}).length,fr:d.filter(function(x){return x.type==='fr'}).length,prog:f.filter(function(x){return x.status==='progress'}).length,draft:f.filter(function(x){return x.status==='draft'}).length,all:f.length}}
-function plan(m){return m<=45?10*m/45:Math.min(30,10+20*(m-45)/210)}
-function lastDoneAgoMin(t){var e=elapsed(t),ds=(t.findings||[]).filter(function(x){return x.status==='done'}).map(function(x){return x.doneAt!=null?x.doneAt:x.at});if(!ds.length)return e/60;return(e-Math.max.apply(null,ds))/60}
+function planFound(m){return m<=45?12*m/45:Math.min(30,12+18*(m-45)/135)}
+function planLogged(m){return m<=45?0:Math.min(30,30*(m-45)/210)}
+function lastActAgoMin(t){var e=elapsed(t),xs=[];(t.findings||[]).forEach(function(x){xs.push(x.at||0);if(x.doneAt!=null)xs.push(x.doneAt)});if(!xs.length)return e/60;return(e-Math.max.apply(null,xs))/60}
 var OUT={active:['In progress','info'],mfr:['MFR · awaiting HDM','warn'],submitted:['Submitted','ok'],unclaimed:['Unclaimed','crit'],released:['Released','warn']};
 var MFR_DOC='Include: finding count, Bug/FR split, workflows tested, what you tried and why you couldn\'t find more.';
+var STAGES=[
+  {id:'hunt',a:0,b:45,n:'Hunt',d:'Capture drafts fast. 10+ found by 0:45, or unclaim.'},
+  {id:'log',a:45,b:90,n:'Log',d:'Move drafts to In progress, run Flow, log in Feather. Capture new ones between.'},
+  {id:'grind',a:90,b:180,n:'Grind',d:'Log steadily. Found 10–19 and stalled → run the MFR bot.'},
+  {id:'push',a:180,b:255,n:'Push',d:'Close the gap to 30. Found 20–29 and stuck at 4:00 → run the MFR bot.'},
+  {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality, final checks, submit or MFR before 4:30.'}
+];
+function stageOf(m){for(var i=0;i<STAGES.length;i++)if(m<STAGES[i].b)return STAGES[i];return STAGES[STAGES.length-1]}
+/* pace model: learns your own capture and logging times from this task */
+function metrics(t){
+  var e=elapsed(t)/60,c=counts(t),f=t.findings||[];
+  var caps=f.map(function(x){return(x.at||0)/60}),lastCap=caps.length?Math.max.apply(null,caps):0;
+  var avgCap=c.all?Math.max(.5,lastCap/c.all):null;
+  var logs=f.filter(function(x){return x.status==='done'&&x.startAt!=null&&x.doneAt!=null&&x.doneAt>x.startAt}).map(function(x){return(x.doneAt-x.startAt)/60});
+  var avgLog=logs.length?logs.reduce(function(a,b){return a+b},0)/logs.length:null;
+  var cap=avgCap||4,lg=avgLog||6,left=Math.max(0,255-e),needLog=Math.max(0,30-c.n),needFind=Math.max(0,30-c.all),queue=c.all-c.n;
+  var capNeed=needFind*cap,logBudget=needLog?(left-capNeed)/needLog:0;
+  var proj=c.n+Math.min(queue,left/lg)+Math.max(0,left-queue*lg)/(lg+cap);
+  return{e:e,c:c,avgCap:avgCap,avgLog:avgLog,cap:cap,lg:lg,left:left,needLog:needLog,needFind:needFind,queue:queue,logBudget:logBudget,target:Math.max(1.5,logBudget),proj:Math.floor(proj),feasible:logBudget>=1.5,pf:planFound(e),pl:planLogged(e)}
+}
+function oldestProg(t){var ps=(t.findings||[]).filter(function(x){return x.status==='progress'});ps.sort(function(a,b){return(a.startAt||0)-(b.startAt||0)});return ps[0]||null}
+function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitled)'}
+function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
+function doNow(t){
+  if(t.status!=='active')return null;var M=metrics(t),e=M.e,c=M.c;
+  if(e<45)return c.all<10?{tone:'info',h:'Capture '+(10-c.all)+' more draft'+(10-c.all>1?'s':'')+' by 0:45',p:'About '+mmss((45-e)*60/Math.max(1,10-c.all))+' each. Type what you see and press Enter; details later.'}:{tone:'ok',h:'10+ found. Keep capturing until 0:45',p:'Then switch to logging: In progress → Flow → Feather.'};
+  if(c.n>=30)return null;
+  var pr=oldestProg(t);
+  if(pr){var spent=(elapsed(t)-(pr.startAt||elapsed(t)))/60,tg=M.target;return spent<=tg?{tone:'info',h:'Finish “'+first(pr)+'” within '+mmss((tg-spent)*60),p:'Budget '+mmss(tg*60)+' a finding to reach 30 by 4:15. Run Flow, log in Feather, then mark it Done.'}:{tone:'warn',h:'Over budget on “'+first(pr)+'” by '+mmss((spent-tg)*60),p:'Wrap it up and mark it Done, or move it back to Not started and take the next one.'}}
+  if(c.draft)return{tone:'warn',h:'Start the next draft now',p:c.draft+' waiting. Click its circle to move it to In progress, then run Flow and log it in Feather.'};
+  return{tone:'info',h:'Queue empty · capture the next finding',p:'You need '+M.needFind+' more found. Budget about '+mmss(M.cap*60)+' to spot one.'};
+}
 function nextStep(t){
-  var e=elapsed(t)/60,c=counts(t),n=c.n,ok=n>=30&&c.b>=5&&c.fr>=5;
+  var e=elapsed(t)/60,c=counts(t),n=c.n,F=c.all,ok=n>=30&&c.b>=5&&c.fr>=5;
   if(t.status==='submitted')return{tone:'ok',h:'Submitted',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings.'};
   if(t.status==='unclaimed')return{tone:'crit',h:'Unclaimed',p:'Released in Feather. No rating, scores or tags needed.'};
   if(t.status==='released')return{tone:'warn',h:'Released',p:'Closed after the HDM review.'};
   if(t.status==='mfr')return{tone:'warn',h:'MFR submitted · awaiting HDM',p:'Keep this task In Progress in Feather. You may claim 1 more task (max 2 active). An approved MFR sends the task to the Review Layer; you never need a second one.'};
   if(ok)return{tone:'ok',h:'Ready to submit',p:'Complete the Runtime Quality assessment, run final checks, then submit in Feather.'};
   if(e>=AHT)return{tone:'crit',h:'AHT hard stop · submit an MFR now',p:'Stop work. Run the MFR bot in #titan-nexus-commercial-team. '+MFR_DOC};
-  if(n>=30)return{tone:'warn',h:'30+ but the mix is short',p:'You need '+(c.b<5?(5-c.b)+' more Bug'+(5-c.b>1?'s':''):'')+(c.b<5&&c.fr<5?' and ':'')+(c.fr<5?(5-c.fr)+' more FR'+(5-c.fr>1?'s':''):'')+'. If you can\'t find them, run the MFR bot.'};
-  if(e>=255)return{tone:'warn',h:'Wrap up',p:n>=30?'Submit now.':'15 minutes to the hard stop. Prepare the MFR. '+MFR_DOC};
-  if(e>=240)return{tone:'warn',h:n>=20?'4:00 · run the MFR bot if stuck':'Under 20 at 4:00 · run the MFR bot',p:'You have '+n+' done. Start Checkset Minimum Findings Request with your count and time, then follow the Activity tab.'};
-  if(e>=45&&n<10)return{tone:'crit',h:'Under 10 past 0:45',p:'The rule is to release (unclaim in Feather) inside the 45-minute window when you\'re under 10 or the app can\'t yield 20+. Unclaim now, or ask your HDM in your POD thread.'};
-  if(e>=90&&n<20){var ago=lastDoneAgoMin(t);if(ago>=20)return{tone:'warn',h:'Stalled at '+n+' · run the MFR bot',p:'No new Done finding for '+Math.round(ago)+' min. In the 1:30–3:00 window, 10–19 and stalled means run the MFR bot.'}}
-  if(e<45)return{tone:'info',h:'Exploration window · '+hm((45-e)*60)+' left',p:'Need 10 findings by 0:45. Runtime won\'t launch, crashes or errors? Tell your HDM in your POD thread and unclaim in Feather. No rating or tags.'};
-  var gap=Math.round(plan(e)-n);
-  if(gap<=1)return{tone:'ok',h:'On pace',p:'Plan is '+Math.round(plan(e))+' by now. Keep hunting.'};
-  return{tone:'warn',h:'Behind plan by '+gap,p:'Plan is '+Math.round(plan(e))+' at '+hm(e*60)+'. You need about '+Math.max(0,(30-n)/Math.max(.25,(255-e)/60)).toFixed(1)+' an hour to reach 30 by 4:15.'};
+  if(n>=30)return{tone:'warn',h:'30 logged but the mix is short',p:'You need '+(c.b<5?(5-c.b)+' more Bug'+(5-c.b>1?'s':''):'')+(c.b<5&&c.fr<5?' and ':'')+(c.fr<5?(5-c.fr)+' more FR'+(5-c.fr>1?'s':''):'')+'. If you can\'t find them, run the MFR bot.'};
+  if(e>=255)return{tone:'warn',h:'Wrap up',p:'15 minutes to the hard stop. '+(F>=30?'Log the rest and submit.':'Prepare the MFR. '+MFR_DOC)};
+  if(e>=240)return{tone:'warn',h:F>=30?'4:00 · log the rest and submit':F>=20?'4:00 · '+F+' found: run the MFR bot if stuck':'Under 20 found at 4:00 · run the MFR bot',p:'Found '+F+', logged '+n+'. Start Checkset Minimum Findings Request with your count and time, then follow the Activity tab.'};
+  if(e>=45&&F<10)return{tone:'crit',h:'Under 10 found past 0:45',p:'The rule is to release (unclaim in Feather) inside the 45-minute window when you\'re under 10 or the app can\'t yield 20+. Unclaim now, or ask your HDM in your POD thread.'};
+  if(e>=90&&F<20){var ago=lastActAgoMin(t);if(ago>=20)return{tone:'warn',h:'Stalled at '+F+' found · run the MFR bot',p:'Nothing new for '+Math.round(ago)+' min. In the 1:30–3:00 window, 10–19 and stalled means run the MFR bot.'}}
+  if(e<45)return{tone:'info',h:'Hunt window · '+hm((45-e)*60)+' left',p:'Found '+F+' of the 10 needed by 0:45. Runtime won\'t launch, crashes or errors? Tell your HDM in your POD thread and unclaim in Feather. No rating or tags.'};
+  var gF=Math.round(planFound(e)-F),gL=Math.round(planLogged(e)-n);
+  if(gF<=1&&gL<=1)return{tone:'ok',h:'On pace',p:'Found '+F+' (plan '+Math.round(planFound(e))+') · logged '+n+' (plan '+Math.round(planLogged(e))+').'};
+  return{tone:'warn',h:gF>1?'Behind on finding by '+gF:'Behind on logging by '+gL,p:'Found '+F+' (plan '+Math.round(planFound(e))+') · logged '+n+' (plan '+Math.round(planLogged(e))+').'};
 }
 var GATES=[
   {id:'g40',m:40,t:'0:40',l:'5 min to the 0:45 cutoff'},
-  {id:'g45',m:45,t:'0:45',l:'Keep (10+) or unclaim'},
+  {id:'g45',m:45,t:'0:45',l:'10+ found? Start logging. Else unclaim'},
   {id:'g90',m:90,t:'1:30',l:'Stall check · 10–19 → MFR bot'},
   {id:'g180',m:180,t:'3:00',l:'End of the 10–19 window'},
   {id:'g240',m:240,t:'4:00',l:'20–29 and stuck → MFR bot'},
@@ -74,9 +107,9 @@ var GATES=[
   {id:'g270',m:270,t:'4:30',l:'Hard stop · submit an MFR'}
 ];
 function gateMessage(t,g){
-  var c=counts(t),n=c.n,tail=' ('+n+' done, '+c.prog+' in progress, '+c.draft+' drafts)';
+  var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.prog+' in progress · '+c.draft+' not started)';
   if(g.id==='g40')return n<10?'Push to 10 by 0:45, or get ready to unclaim in Feather.'+tail:'You\'re clear of the 0:45 cutoff.'+tail;
-  if(g.id==='g45')return n<10?'Under 10: release the task now (unclaim in Feather), unless you\'re about to reach 10.'+tail:'Keep testing. Plan: about 6 an hour from here.'+tail;
+  if(g.id==='g45')return n<10?'Under 10 found: release the task now (unclaim in Feather), unless you\'re about to reach 10.'+tail:'Switch to logging: move a draft to In progress, run Flow, log it in Feather. Keep capturing between.'+tail;
   if(g.id==='g90')return n<20?'If you\'re stalled at '+n+', run the MFR bot. Otherwise keep going.'+tail:'Good pace. Keep going.'+tail;
   if(g.id==='g180')return n<20?'Still under 20. If you can\'t find more, run the MFR bot.'+tail:'Keep going: 4:00 is the next check.'+tail;
   if(g.id==='g240')return n>=30?'You\'re at 30+. Check the Bug/FR mix and submit.'+tail:'If you\'re stuck at '+n+', run the MFR bot now.'+tail;
@@ -113,7 +146,12 @@ function checkGates(){
     if(t.status!=='active'||!running(t))return;
     t.fired=t.fired||{};var m=elapsed(t)/60,changed=false;
     GATES.forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
-    var c=counts(t);if(c.n>=30&&c.b>=5&&c.fr>=5&&!t.fired.ready){t.fired.ready=1;changed=true;alertUser(t,'Ready to submit · '+t.app,'30 done with '+c.b+' Bugs and '+c.fr+' FRs. Runtime Quality, final checks, submit in Feather.','ok')}
+    var c=counts(t),es=elapsed(t);
+    if(m>=45&&c.n<30){var pr=oldestProg(t),M=metrics(t);
+      if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Finish it or park it and start the next draft.','warn')}}
+      else if(c.draft){var idleFrom=Math.max(45*60,t.lastAct||0),idle=(es-idleFrom)/60;if(idle>=2&&(!t.nudgeAt||es-t.nudgeAt>=300)){t.nudgeAt=es;changed=true;alertUser(t,'Start the next finding · '+t.app,c.draft+' draft'+(c.draft>1?'s':'')+' waiting and nothing In progress for '+Math.round(idle)+' min. Move one to In progress, run Flow, log it in Feather.','warn')}}
+    }
+    if(c.n>=30&&c.b>=5&&c.fr>=5&&!t.fired.ready){t.fired.ready=1;changed=true;alertUser(t,'Ready to submit · '+t.app,'30 done with '+c.b+' Bugs and '+c.fr+' FRs. Runtime Quality, final checks, submit in Feather.','ok')}
     if(changed)saveTask(t);
   });
 }
@@ -123,7 +161,7 @@ function markPastGates(t){t.fired=t.fired||{};var m=elapsed(t)/60;GATES.forEach(
 function toast(h,p,tone,tid){var box=$('#toasts');if(!box){box=document.createElement('div');box.id='toasts';box.className='toasts';box.setAttribute('aria-live','polite');document.body.appendChild(box)}
   var el=document.createElement('div');el.className='toast';el.innerHTML='<b>'+esc(h)+'</b>'+(p?'<span>'+esc(p)+'</span>':'')+'<button type="button">Dismiss</button>';
   el.querySelector('button').onclick=function(){el.remove()};box.appendChild(el);while(box.children.length>4)box.firstChild.remove();
-  if(tone!=='crit'&&tone!=='warn')setTimeout(function(){el.remove()},4000)}
+  if(tone!=='crit'&&tone!=='warn')setTimeout(function(){el.remove()},2600)}
 
 /* ---------- view state ---------- */
 var VIEW={mode:IDX.cur?'task':'empty',filter:'all',addType:'bug',q:'',pastQ:'',editHead:false,confirmDel:null,sync:false,newErr:''};
@@ -154,7 +192,7 @@ function newHtml(){
   return'<div class="row"><button class="btn sm mobtoggle" data-a="menu">Tasks</button></div><form class="card form" id="newForm" autocomplete="off"><h1 style="margin:0;font-size:22px">New task</h1>'+warn+
   '<label for="nApp">App name<input class="in" id="nApp" list="appList" placeholder="e.g. Salesforce clone" required><datalist id="appList">'+Object.keys(apps).map(function(a){return'<option value="'+esc(a)+'">'}).join('')+'</datalist><span class="hint" id="nAppHint">Same name as before lets the app check your past findings for duplicates.</span></label>'+
   '<label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
-  '<label for="nTime">Hubstaff time on this task now<input class="in mono" id="nTime" value="0:00:00" style="max-width:160px"><span class="hint">h:mm or h:mm:ss. You can re-sync any time without stopping Hubstaff.</span></label>'+
+  '<label for="nTime">Hubstaff time on this task, as it shows right now<input class="in mono" id="nTime" placeholder="0:00:00" style="max-width:160px" inputmode="numeric"><span class="hint">Type it while Hubstaff keeps running: 1:23:45, 1:23 or just 12345. The seconds you take to type are added. Leave empty for 0:00:00.</span></label>'+
   '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+
   '<p class="hint err" id="nErr">'+esc(VIEW.newErr)+'</p><div class="row"><button class="btn pri" type="submit">Start task</button><button class="btn" type="button" data-a="cancelNew">Cancel</button></div></form>';
 }
@@ -168,21 +206,39 @@ function taskHtml(t){
   var tk=[0,45,90,180,240,270];
   var clock='<div class="card"><div class="clockcard"><div><div class="lab">AHT · synced to Hubstaff</div><div class="clock" id="clk">'+hms(e)+'<small> / 4:30:00</small></div><div class="lab" id="left" style="margin-top:6px">'+(e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60))+'</div></div>'+
     '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,90,180,240].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
-    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause clock':'Resume clock')+'</button><button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
-    (VIEW.sync?'<form class="row" id="syncForm"><label for="syncIn" class="hint">Hubstaff shows</label><input class="in mono" id="syncIn" value="'+hms(e)+'" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="sync">Cancel</button></form>':'')+
-    '</div></div><div class="counts"><div><b id="cN">'+c.n+'<small class="muted" style="font-size:14px">/30</small></b><span>done</span></div><div><b style="color:var(--bug)">'+c.b+'</b><span>Bugs · min 5</span></div><div><b style="color:var(--fr)">'+c.fr+'</b><span>FRs · min 5</span></div><div><b>'+c.prog+'</b><span>in progress</span></div><div><b>'+c.draft+'</b><span>drafts</span></div><div><b>'+(e>=300?(c.n/(e/3600)).toFixed(1):'—')+'</b><span>done / hour</span></div></div></div>';
+    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button><button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
+    (VIEW.sync?'<form class="row" id="syncForm"><label for="syncIn" class="hint">Look at Hubstaff and type its time</label><input class="in mono" id="syncIn" placeholder="1:23:45" inputmode="numeric" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="sync">Cancel</button><span class="hint" style="flex-basis:100%">No need to stop Hubstaff. The seconds you take to type are added automatically.</span></form>':'')+
+    '</div></div><div class="counts"><div><b>'+c.all+'</b><span>found</span></div><div><b id="cN">'+c.n+'<small class="muted" style="font-size:14px">/30</small></b><span>logged (Done)</span></div><div><b style="color:var(--bug)">'+c.b+'</b><span>Bugs · min 5</span></div><div><b style="color:var(--fr)">'+c.fr+'</b><span>FRs · min 5</span></div><div><b>'+c.prog+'</b><span>in progress</span></div><div><b>'+c.draft+'</b><span>not started</span></div><div><b>'+(e>=300?(c.n/(e/3600)).toFixed(1):'—')+'</b><span>done / hour</span></div></div></div>';
   var fl=(t.findings||[]).filter(function(f){return VIEW.filter==='all'||f.status===VIEW.filter});
   var findings='<div class="card"><div class="row"><span class="lab">Findings · rapid hunt</span><span class="sp"></span><div class="seg" role="group" aria-label="Filter">'+[['all','All '+c.all],['draft','Draft '+c.draft],['progress','In progress '+c.prog],['done','Done '+c.n]].map(function(x){return'<button type="button" class="all" data-a="filter" data-f="'+x[0]+'" aria-pressed="'+(VIEW.filter===x[0])+'">'+x[1]+'</button>'}).join('')+'</div></div>'+
     '<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="What did you see? Enter adds a draft" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
-    '<div class="row hint"><span>Circle: not started → in progress → done (encoded and checked in Flow). In progress stays on top; Done collects at the bottom. Gate counts use Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
+    '<div class="row hint"><span>Circle: not started → in progress (running Flow) → done (logged in Feather). Found counts every finding; logged counts Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
     (VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div>';
-  var gates='<div class="next '+s.tone+'" id="next"><span class="lab">Next step</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div>'+
+  var gates='<div class="next '+s.tone+'" id="next"><span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
   var notes='<div class="card"><div class="row"><span class="lab">Scratch notes</span><span class="sp"></span><span class="saved" data-saved></span></div><textarea class="in notes" id="notes" data-in="notes" placeholder="Workflows to try, things to re-check, real-app comparisons…" aria-label="Scratch notes">'+esc(t.notes||'')+'</textarea></div>';
   var pq=VIEW.pastQ.toLowerCase(),pl=past.filter(function(p){return!pq||String(p.f.text).toLowerCase().indexOf(pq)>=0});
   var nTasks={};past.forEach(function(p){nTasks[p.task.id]=1});
   var pastHtml='<div class="card"><span class="lab">Past findings on '+esc(t.app||'this app')+'</span>'+(past.length?'<p class="hint" style="margin:0">'+Object.keys(nTasks).length+' earlier task'+(Object.keys(nTasks).length>1?'s':'')+', '+past.length+' findings. Drafts that match one get an amber flag.</p><input class="in" data-in="pastQ" id="pastQ" placeholder="Search past findings" value="'+esc(VIEW.pastQ)+'" aria-label="Search past findings"><div class="past">'+pl.slice(0,200).map(function(p){var first=String(p.f.text||'').split('\n')[0];return'<div class="pf '+p.f.type+'"><div class="m">'+day(p.task.createdAt)+' · '+(p.f.type==='bug'?'Bug':p.f.type==='fr'?'FR':'?')+' · '+(p.f.status==='done'?'done':p.f.status)+'</div>'+esc(first||'(empty)')+'</div>'}).join('')+'</div>':'<p class="hint" style="margin:0">'+(key?'First task on this app. Next time you claim it, this list shows what you already filed.':'Name the app to compare with earlier tasks.')+'</p>')+'</div>';
-  return nb+head+'<div class="cols"><div class="colstack">'+clock+findings+'</div><div class="colstack">'+gates+notes+pastHtml+'</div></div>';
+  return nb+head+'<div class="mbar" id="mbar">'+mbarHtml(t)+'</div><div class="cols"><div class="colstack">'+clock+findings+'</div><div class="colstack">'+gates+notes+pastHtml+'</div></div>';
+}
+function mbarHtml(t){
+  var e=elapsed(t),m=e/60,st=stageOf(m),c=counts(t),dn=doNow(t),nx=null;for(var i=0;i<GATES.length;i++)if(GATES[i].m>m){nx=GATES[i];break}
+  var segs=STAGES.map(function(x){var w=(x.b-x.a)/AHT*100,on=x===st,pct=on?Math.min(100,(m-x.a)/(x.b-x.a)*100):m>=x.b?100:0;return'<div class="seg2'+(on?' on':m>=x.b?' past':'')+'" style="flex:'+w+' 1 0"><i style="width:'+pct+'%"></i><b>'+x.n+'</b><span>'+hm(x.a*60)+'–'+hm(x.b*60)+'</span></div>'}).join('');
+  return'<div class="mrow"><div class="mclock"><span class="lab">AHT · '+(running(t)?'running':'paused')+'</span><b class="mono">'+hms(e)+'</b><span class="mono muted">'+(e<AHT*60?hm(AHT*60-e)+' left of 4:30':'over AHT by '+hm(e-AHT*60))+'</span></div>'+
+  '<div class="mstage"><div class="segs">'+segs+'</div><div class="mnow"><span class="pill info">Stage · '+st.n+'</span><span class="mdesc">'+esc(st.d)+'</span><span class="mono mends">'+(m<st.b?'ends in '+mmss((st.b-m)*60):'')+'</span></div></div>'+
+  '<div class="mcount"><div><b class="mono">'+c.all+'</b><span>found</span></div><div><b class="mono">'+c.n+'</b><span>logged</span></div><div><b class="mono">'+(nx?nx.t:'—')+'</b><span>'+(nx?'next gate · '+mmss((nx.m-m)*60):'no gates left')+'</span></div></div></div>'+
+  (dn?'<div class="mdo '+dn.tone+'"><span class="lab">Do now</span><b>'+esc(dn.h)+'</b><span>'+esc(dn.p)+'</span></div>':'');
+}
+function stratHtml(t){
+  var M=metrics(t),c=M.c,tone=function(a,b){return a>=b-1?'ok':'warn'};
+  if(t.status!=='active')return'<span class="lab">Pace</span><p class="hint" style="margin:0">Found '+c.all+' · logged '+c.n+' in '+hm(elapsed(t))+'. Average capture '+(M.avgCap?mmss(M.avgCap*60):'—')+', average log '+(M.avgLog?mmss(M.avgLog*60):'—')+'.</p>';
+  var verdict=c.n>=30?'Logged 30.':M.feasible?'On track: about '+Math.min(30,M.proj)+(M.proj>=30?'+':'')+' logged by 4:15 at your pace.':'Short: about '+M.proj+' logged by 4:15 at your pace. Speed up, or plan the MFR (4:00 if 20–29 found).';
+  return'<span class="lab">Your pace · learned from this task</span>'+
+  '<div class="sgrid"><div class="'+tone(c.all,M.pf)+'"><b class="mono">'+c.all+' / '+Math.round(M.pf)+'</b><span>found / plan now</span></div><div class="'+tone(c.n,M.pl)+'"><b class="mono">'+c.n+' / '+Math.round(M.pl)+'</b><span>logged / plan now</span></div>'+
+  '<div><b class="mono">'+(M.avgCap?mmss(M.avgCap*60):'—')+'</b><span>avg to capture one</span></div><div><b class="mono">'+(M.avgLog?mmss(M.avgLog*60):'—')+'</b><span>avg to log one</span></div>'+
+  '<div class="'+(c.n>=30?'':M.feasible?'ok':'crit')+'"><b class="mono">'+(c.n>=30?'—':M.feasible?mmss(M.target*60):'under 1:30')+'</b><span>budget per remaining finding</span></div><div><b class="mono">'+(c.n>=30?c.n:M.proj)+'</b><span>projected logged at 4:15</span></div></div>'+
+  '<p class="hint" style="margin:0">'+esc(verdict)+(M.avgLog?'':' Logging time is estimated at 6:00 until you finish your first In progress → Done.')+'</p>';
 }
 function groupedHtml(t,fl,c){
   if(!fl.length)return'<p class="muted" style="margin:0">No findings yet. Type what you see above and press Enter.</p>';
@@ -197,7 +253,7 @@ function gatesHtml(e){return GATES.map(function(g,i){var m=e/60,nx=GATES[i+1];va
 function fHtml(t,f){
   var d=dupOf(t,f);
   return'<div class="f '+f.status+(d?' dup':'')+'" data-fid="'+f.id+'"><button class="st '+f.status+'" data-a="cycle" data-id="'+f.id+'" aria-label="Status: '+f.status+'. Click to change">'+(f.status==='done'?'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'')+'</button>'+
-  '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><div class="fh"><button class="chip '+f.type+'" data-a="ftype" data-id="'+f.id+'">'+(f.type==='bug'?'BUG':f.type==='fr'?'FR':'TYPE?')+'</button><span class="lab">'+(f.status==='draft'?'Draft':f.status==='progress'?'In progress':'Done')+' · at '+hm(f.at||0)+'</span><span class="sp"></span>'+(VIEW.confirmDel===f.id?'<button class="btn sm danger" data-a="delF" data-id="'+f.id+'">Confirm delete</button>':'<button class="btn sm ghost" data-a="delF" data-id="'+f.id+'" aria-label="Delete finding">Delete</button>')+'</div>'+
+  '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><div class="fh"><button class="chip '+f.type+'" data-a="ftype" data-id="'+f.id+'">'+(f.type==='bug'?'BUG':f.type==='fr'?'FR':'TYPE?')+'</button><span class="lab">'+(f.status==='draft'?'Not started':f.status==='progress'?'In progress':'Done')+' · found at '+hm(f.at||0)+(f.status==='done'&&f.startAt!=null&&f.doneAt!=null?' · logged in '+mmss(f.doneAt-f.startAt):'')+'</span>'+(f.status==='progress'?'<span class="ftimer" data-ft="'+f.id+'"></span>':'')+'<span class="sp"></span>'+(VIEW.confirmDel===f.id?'<button class="btn sm danger" data-a="delF" data-id="'+f.id+'">Confirm delete</button>':'<button class="btn sm ghost" data-a="delF" data-id="'+f.id+'" aria-label="Delete finding">Delete</button>')+'</div>'+
   '<textarea data-in="ftext" data-id="'+f.id+'" rows="2" aria-label="Finding notes" placeholder="Steps, expected vs actual, page…">'+esc(f.text||'')+'</textarea><div class="dupbox">'+dupHtml(d)+'</div></div></div>';
 }
 function grow(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}
@@ -209,7 +265,10 @@ function tick(){
   if(t&&VIEW.mode==='task'){var e=elapsed(t),c=$('#clk'),b=$('#clkBar'),l=$('#left');
     if(c)c.innerHTML=hms(e)+'<small> / 4:30:00</small>';if(b)b.style.width=Math.min(100,e/(AHT*60)*100)+'%';if(l)l.textContent=e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60);
     document.title=hm(e)+' · '+counts(t).n+'/30 · '+(t.app||'Task')+' · CheckSet Tasker';
-    var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<span class="lab">Next step</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
+    var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
+    var mb=$('#mbar');if(mb)mb.innerHTML=mbarHtml(t);
+    if(Math.floor(e)%5===0){var sg=$('#strat');if(sg)sg.innerHTML=stratHtml(t)}
+    var M=null;$$('[data-ft]').forEach(function(el){var f=findF(t,el.dataset.ft);if(!f)return;M=M||metrics(t);var sp=e-(f.startAt||e),tg=M.target*60;el.textContent=mmss(sp)+' / '+mmss(tg);el.className='ftimer'+(sp>tg?' over':'')});
   }else document.title='CheckSet Tasker';
 }
 setInterval(tick,1000);
@@ -231,12 +290,12 @@ document.addEventListener('click',function(ev){
   if(a==='copyId'){var done=function(){toast('Copied',t.featherId,'ok')};if(navigator.clipboard)navigator.clipboard.writeText(t.featherId).then(done,function(){prompt('Copy the Feather ID',t.featherId)});return}
   if(a==='editHead'){VIEW.editHead=!VIEW.editHead;render();return}
   if(a==='run'){running(t)?pause(t):resume(t);saveTask(t);render();return}
-  if(a==='sync'){VIEW.sync=!VIEW.sync;render();var si=$('#syncIn');if(si){si.focus();si.select()}return}
+  if(a==='sync'){VIEW.sync=!VIEW.sync;VIEW.syncT0=null;render();var si=$('#syncIn');if(si)si.focus();return}
   if(a==='nudge'){setElapsed(t,Math.max(0,elapsed(t)+(+b.dataset.d)));markPastGates(t);saveTask(t);render();return}
   if(a==='toggleDone'){IDX.settings.showDone=!IDX.settings.showDone;saveIdx();render();return}
   if(a==='filter'){VIEW.filter=b.dataset.f;render();return}
   if(a==='addType'){VIEW.addType=b.dataset.t;$$('[data-a="addType"]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});var ai=$('#addIn');if(ai)ai.focus();return}
-  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';if(f.status==='done')f.doneAt=elapsed(t);saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;toast(f.status==='done'?'Moved to Done':f.status==='progress'?'Moved to In progress':'Moved back to Not started',f.status==='done'?'Find it under Done at the bottom of the list.':'','ok');checkGates();return}
+  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;toast(f.status==='done'?'Moved to Done':f.status==='progress'?'Moved to In progress':'Moved back to Not started',f.status==='done'?'Find it under Done at the bottom of the list.':'','ok');checkGates();return}
   if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';saveTask(t);render();return}
   if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
   if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();toast('Task deleted','','ok');return}
@@ -258,7 +317,7 @@ document.addEventListener('change',function(ev){if(ev.target.id==='imp'&&ev.targ
 document.addEventListener('submit',function(ev){
   var f=ev.target;ev.preventDefault();var t=cur();
   if(f.id==='newForm'){
-    var app=$('#nApp').value.trim(),url=$('#nUrl').value.trim(),fid=parseFeather(url),sec=parseTime($('#nTime').value);
+    var app=$('#nApp').value.trim(),url=$('#nUrl').value.trim(),fid=parseFeather(url),sec=$('#nTime').value.trim()?parseTime($('#nTime').value):0;if(sec!=null&&$('#nRun').checked&&VIEW.syncT0)sec+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;
     if(!app){VIEW.newErr='Enter the app name.';$('#nErr').textContent=VIEW.newErr;return}
     if(sec==null){$('#nErr').textContent='Enter the Hubstaff time as h:mm or h:mm:ss, for example 0:12:30.';return}
     var ex=fid&&allTasks().find(function(x){return x.featherId===fid});
@@ -271,10 +330,11 @@ document.addEventListener('submit',function(ev){
     return}
   if(!t)return;
   if(f.id==='addForm'){var inp=$('#addIn'),v=inp.value.trim();if(!v)return;t.findings=t.findings||[];t.findings.unshift({id:uid(),type:VIEW.addType,status:'draft',text:v,at:elapsed(t),createdAt:Date.now()});saveTask(t);if(VIEW.filter==='done'||VIEW.filter==='progress')VIEW.filter='all';render();var ni=$('#addIn');if(ni)ni.focus();return}
-  if(f.id==='syncForm'){var s=parseTime($('#syncIn').value);if(s==null){toast('Check the time','Use h:mm or h:mm:ss, for example 1:23:45.','warn');return}setElapsed(t,s);markPastGates(t);VIEW.sync=false;saveTask(t);render();toast('Synced to Hubstaff',hms(s),'ok');return}
+  if(f.id==='syncForm'){var s=parseTime($('#syncIn').value);if(s!=null&&running(t)&&VIEW.syncT0)s+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;if(s==null){toast('Check the time','Use h:mm or h:mm:ss, for example 1:23:45.','warn');return}setElapsed(t,s);markPastGates(t);VIEW.sync=false;saveTask(t);render();toast('Synced to Hubstaff','Clock now '+hms(elapsed(t))+(running(t)?' and running.':' (paused).'),'ok');return}
   if(f.id==='headForm'){t.app=$('#eApp').value.trim()||t.app;t.featherUrl=$('#eUrl').value.trim();t.featherId=parseFeather(t.featherUrl);VIEW.editHead=false;saveTask(t);render();return}
 });
 document.addEventListener('input',function(ev){
+  if((ev.target.id==='syncIn'||ev.target.id==='nTime')&&!VIEW.syncT0)VIEW.syncT0=Date.now();
   if(ev.target.id==='nUrl'){var id=parseFeather(ev.target.value),h=$('#nUrlHint');if(!h)return;if(!ev.target.value.trim()){h.className='hint';h.textContent='The task ID after /tasks/ is pulled out for you.';return}
     var ex=id&&allTasks().find(function(x){return x.featherId===id});h.className='hint '+(id&&!ex?'ok':'err');h.textContent=id?(ex?'Already logged: '+ex.app+', '+day(ex.createdAt)+'.':'Task ID: '+id):'No task ID found. It looks like 625cc481-e437-496e-8393-1ff6a0fe5970.'}
   if(ev.target.id==='nApp'){var key=appKey(ev.target.value),n=0,tk=0,h2=$('#nAppHint');allTasks().forEach(function(x){if(appKey(x.app)===key){tk++;n+=(x.findings||[]).length}});if(h2)h2.textContent=key&&tk?'You\'ve tested this app '+tk+' time'+(tk>1?'s':'')+' ('+n+' findings). They\'ll be checked for duplicates.':'Same name as before lets the app check your past findings for duplicates.'}
