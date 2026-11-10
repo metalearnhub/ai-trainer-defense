@@ -174,8 +174,8 @@ function taskHtml(t){
   var fl=(t.findings||[]).filter(function(f){return VIEW.filter==='all'||f.status===VIEW.filter});
   var findings='<div class="card"><div class="row"><span class="lab">Findings · rapid hunt</span><span class="sp"></span><div class="seg" role="group" aria-label="Filter">'+[['all','All '+c.all],['draft','Draft '+c.draft],['progress','In progress '+c.prog],['done','Done '+c.n]].map(function(x){return'<button type="button" class="all" data-a="filter" data-f="'+x[0]+'" aria-pressed="'+(VIEW.filter===x[0])+'">'+x[1]+'</button>'}).join('')+'</div></div>'+
     '<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="What did you see? Enter adds a draft" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
-    '<div class="row hint"><span>Circle: draft → in progress → done (encoded and checked in Flow). Gate counts use Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
-    '<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">'+(c.all?'Nothing in this filter.':'No findings yet. Type what you see above and press Enter.')+'</p>')+'</div></div>';
+    '<div class="row hint"><span>Circle: not started → in progress → done (encoded and checked in Flow). In progress stays on top; Done collects at the bottom. Gate counts use Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
+    (VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div>';
   var gates='<div class="next '+s.tone+'" id="next"><span class="lab">Next step</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
   var notes='<div class="card"><div class="row"><span class="lab">Scratch notes</span><span class="sp"></span><span class="saved" data-saved></span></div><textarea class="in notes" id="notes" data-in="notes" placeholder="Workflows to try, things to re-check, real-app comparisons…" aria-label="Scratch notes">'+esc(t.notes||'')+'</textarea></div>';
@@ -184,6 +184,15 @@ function taskHtml(t){
   var pastHtml='<div class="card"><span class="lab">Past findings on '+esc(t.app||'this app')+'</span>'+(past.length?'<p class="hint" style="margin:0">'+Object.keys(nTasks).length+' earlier task'+(Object.keys(nTasks).length>1?'s':'')+', '+past.length+' findings. Drafts that match one get an amber flag.</p><input class="in" data-in="pastQ" id="pastQ" placeholder="Search past findings" value="'+esc(VIEW.pastQ)+'" aria-label="Search past findings"><div class="past">'+pl.slice(0,200).map(function(p){var first=String(p.f.text||'').split('\n')[0];return'<div class="pf '+p.f.type+'"><div class="m">'+day(p.task.createdAt)+' · '+(p.f.type==='bug'?'Bug':p.f.type==='fr'?'FR':'?')+' · '+(p.f.status==='done'?'done':p.f.status)+'</div>'+esc(first||'(empty)')+'</div>'}).join('')+'</div>':'<p class="hint" style="margin:0">'+(key?'First task on this app. Next time you claim it, this list shows what you already filed.':'Name the app to compare with earlier tasks.')+'</p>')+'</div>';
   return nb+head+'<div class="cols"><div class="colstack">'+clock+findings+'</div><div class="colstack">'+gates+notes+pastHtml+'</div></div>';
 }
+function groupedHtml(t,fl,c){
+  if(!fl.length)return'<p class="muted" style="margin:0">No findings yet. Type what you see above and press Enter.</p>';
+  var by=function(st){return fl.filter(function(f){return f.status===st})};
+  var pr=by('progress'),dr=by('draft'),dn=by('done'),open=!!IDX.settings.showDone,h='';
+  var sec=function(label,list){return list.length?'<div class="ghead"><span class="lab">'+label+' · '+list.length+'</span></div><div class="flist">'+list.map(function(f){return fHtml(t,f)}).join('')+'</div>':''};
+  h+=sec('In progress',pr)+sec('Not started',dr);
+  if(!pr.length&&!dr.length)h+='<p class="muted" style="margin:0">Everything is done. Add the next finding above.</p>';
+  if(dn.length)h+='<button type="button" class="donebar" data-a="toggleDone" aria-expanded="'+open+'"><span class="lab">Done · '+dn.length+'</span><span class="sp"></span><span>'+(open?'Hide':'Show')+'</span></button>'+(open?'<div class="flist">'+dn.map(function(f){return fHtml(t,f)}).join('')+'</div>':'');
+  return h}
 function gatesHtml(e){return GATES.map(function(g,i){var m=e/60,nx=GATES[i+1];var st=m>=g.m&&(!nx||m<nx.m)?'now':m>=g.m?'past':'';return'<div class="gate '+st+'"><span class="t">'+g.t+'</span><i></i><span>'+esc(g.l)+'</span></div>'}).join('')}
 function fHtml(t,f){
   var d=dupOf(t,f);
@@ -224,9 +233,10 @@ document.addEventListener('click',function(ev){
   if(a==='run'){running(t)?pause(t):resume(t);saveTask(t);render();return}
   if(a==='sync'){VIEW.sync=!VIEW.sync;render();var si=$('#syncIn');if(si){si.focus();si.select()}return}
   if(a==='nudge'){setElapsed(t,Math.max(0,elapsed(t)+(+b.dataset.d)));markPastGates(t);saveTask(t);render();return}
+  if(a==='toggleDone'){IDX.settings.showDone=!IDX.settings.showDone;saveIdx();render();return}
   if(a==='filter'){VIEW.filter=b.dataset.f;render();return}
   if(a==='addType'){VIEW.addType=b.dataset.t;$$('[data-a="addType"]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});var ai=$('#addIn');if(ai)ai.focus();return}
-  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';if(f.status==='done')f.doneAt=elapsed(t);saveTask(t);render();checkGates();return}
+  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';if(f.status==='done')f.doneAt=elapsed(t);saveTask(t);var mn=$('#main'),y=mn?mn.scrollTop:0;render();var m2=$('#main');if(m2)m2.scrollTop=y;toast(f.status==='done'?'Moved to Done':f.status==='progress'?'Moved to In progress':'Moved back to Not started',f.status==='done'?'Find it under Done at the bottom of the list.':'','ok');checkGates();return}
   if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';saveTask(t);render();return}
   if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
   if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();toast('Task deleted','','ok');return}
