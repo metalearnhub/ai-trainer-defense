@@ -518,8 +518,31 @@ document.addEventListener('change',function(ev){if(ev.target.id==='libType'){VIE
 var GUIDE_SRC='CheckSet Operations & Strategy Handbook (Nov 2026), Nov 9 Office Hours, and your HDM confirmations of Nov 11.';
 function gTable(head,rows){return'<div class="gtable"><table><thead><tr>'+head.map(function(h){return'<th>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+rows.map(function(r){return'<tr>'+r.map(function(c){return'<td>'+c+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table></div>'}
 function gSec(id,title,body){return'<section class="gsec" id="g-'+id+'"><h2>'+title+'</h2>'+body+'</section>'}
+function flowChart(){
+  var E='var(--muted)',I='var(--fg)',Q='var(--muted)';
+  var box=function(cx,y,w,h,c){return'<rect x="'+(cx-w/2)+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="8" fill="'+(c||'none')+'" fill-opacity="'+(c?0.14:1)+'" stroke="'+(c||E)+'" stroke-width="'+(c?2:1.25)+'"/>'};
+  var dia=function(cx,cy,hw,hh){return'<polygon points="'+(cx-hw)+','+cy+' '+cx+','+(cy-hh)+' '+(cx+hw)+','+cy+' '+cx+','+(cy+hh)+'" fill="none" stroke="'+E+'" stroke-width="1.25"/>'};
+  var tx=function(x,y,t,o){o=o||{};return'<text x="'+x+'" y="'+y+'" text-anchor="'+(o.a||'middle')+'" font-size="'+(o.s||13)+'" font-weight="'+(o.w||400)+'" fill="'+(o.c||I)+'">'+t+'</text>'};
+  var B='var(--crit)',W='var(--warn)',G='var(--ok)';
+  return'<svg class="flowchart" viewBox="0 0 760 760" role="img" aria-label="Task workflow: every task ends by unclaim, release, MFR route or submit"><defs><marker id="fc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="'+E+'"/></marker></defs>'+
+  tx(24,30,'Every task ends one of four ways: unclaim, release, MFR route or submit',{a:'start',s:15,w:600})+tx(24,52,'Red leaves the task · amber goes through the MFR · green is submitted',{a:'start',s:11.5,c:Q})+
+  '<g fill="none" stroke="'+E+'" stroke-width="1.25"><path d="M250 136V162" marker-end="url(#fc-arrow)"/><path d="M360 196H430" marker-end="url(#fc-arrow)"/><path d="M250 230V266" marker-end="url(#fc-arrow)"/><path d="M360 300H430" marker-end="url(#fc-arrow)"/><path d="M250 334V370" marker-end="url(#fc-arrow)"/><path d="M250 426V452" marker-end="url(#fc-arrow)"/><path d="M360 486H430" marker-end="url(#fc-arrow)"/><path d="M250 520V546" marker-end="url(#fc-arrow)"/><path d="M360 590H430" marker-end="url(#fc-arrow)"/><path d="M250 634V660" marker-end="url(#fc-arrow)"/><path d="M360 694H430" marker-end="url(#fc-arrow)"/><path d="M140 694H60V398H120" marker-end="url(#fc-arrow)"/></g>'+
+  box(250,80,260,56)+tx(250,104,'Claim the task',{w:600})+tx(250,122,'One task · test freely for 45 min',{s:11.5,c:Q})+
+  dia(250,196,110,34)+tx(250,200,'20+ possible by 0:45?')+
+  box(575,168,290,56,B)+tx(575,192,'Unclaim any time before 0:45',{w:600})+tx(575,210,'Unstable, broken, or can\'t reach 20+',{s:11.5})+
+  dia(250,300,110,34)+tx(250,304,'Usable?')+
+  box(575,272,290,56,B)+tx(575,296,'Release the task',{w:600})+tx(575,314,'Environment broken or unusable',{s:11.5})+
+  box(250,370,260,56)+tx(250,394,'Test and file findings',{w:600})+tx(250,412,'Aim for 30+ · under 30 goes via the MFR',{s:11.5,c:Q})+
+  dia(250,486,110,34)+tx(250,490,'2:00 · 10+ found?')+
+  box(575,450,290,72,W)+tx(575,474,'Start the MFR workflow',{w:600})+tx(575,490,'Under 5: document and release',{s:11.5})+tx(575,506,'5–9: follow its outcome',{s:11.5})+
+  dia(250,590,110,44)+tx(250,586,'30+ valid, 5+ Bugs,')+tx(250,602,'5+ FRs?')+
+  box(575,554,290,72,G)+tx(575,578,'Submit in Feather',{w:600})+tx(575,594,'Runtime Quality, then final checks',{s:11.5})+tx(575,610,'Before 4:30',{s:11.5})+
+  dia(250,694,110,34)+tx(250,698,'Reached 4:30?')+
+  box(575,654,290,80,W)+tx(575,678,'Stop at 4:30',{w:600})+tx(575,696,'Under 30: Slack MFR workflow',{s:11.5})+tx(575,712,'with tested areas and limits',{s:11.5})+
+  tx(395,188,'no',{s:11.5,c:Q})+tx(258,252,'yes',{a:'start',s:11.5,c:Q})+tx(395,292,'no',{s:11.5,c:Q})+tx(258,356,'yes',{a:'start',s:11.5,c:Q})+tx(395,478,'no',{s:11.5,c:Q})+tx(258,538,'yes',{a:'start',s:11.5,c:Q})+tx(395,582,'yes',{s:11.5,c:Q})+tx(258,652,'no',{a:'start',s:11.5,c:Q})+tx(395,686,'yes',{s:11.5,c:Q})+tx(66,560,'no: keep testing',{a:'start',s:11.5,c:Q})+
+  '</svg>'}
 function guideHtml(){
-  var nav=[['glance','At a glance'],['flow','The workflow'],['clock','Clock vs count'],['exits','Exits'],['rubric','Writing the rubric'],['filter','Rank and filter'],['evidence','Real-app FRs and AI'],['queue','Concurrency and queue'],['open','Still to confirm']];
+  var nav=[['glance','At a glance'],['chart','Workflow chart'],['flow','Step by step'],['clock','Clock vs count'],['exits','Exits'],['rubric','Writing the rubric'],['filter','Rank and filter'],['evidence','Real-app FRs and AI'],['queue','Concurrency and queue'],['open','Still to confirm']];
   return'<div class="wrap guide"><div class="card"><div class="row"><h1 style="margin:0;font-size:22px">Guide · rules and workflow</h1><span class="sp"></span><button class="btn sm ghost" data-a="guideClose">Back</button></div><p class="hint" style="margin:0">Source: '+GUIDE_SRC+' The app\'s alerts and rule checks follow exactly this.</p>'+
   '<nav class="gnav" aria-label="Guide sections">'+nav.map(function(n){return'<button class="btn sm ghost" data-a="gjump" data-g="'+n[0]+'">'+n[1]+'</button>'}).join('')+'</nav></div>'+
   gSec('glance','At a glance',gTable(['Rule','Number','What it means'],[
@@ -530,6 +553,7 @@ function guideHtml(){
     ['MFR checkpoint','2:00','Under 5 → MFR and release · 5–9 → MFR and follow it · 10+ → keep testing toward 30+'],
     ['AHT ceiling','4:30','Stop. Under 30 → Slack MFR workflow'],
     ['Unsure','Any time','Start the MFR workflow first. Zero penalty for starting it']]))+
+  gSec('chart','Workflow chart','<div class="fcwrap">'+flowChart()+'</div><p class="hint">Follow the arrows from the top. Until you reach 30+ or 4:30, you loop back to testing.</p>')+
   gSec('flow','The workflow, step by step','<ol class="gsteps">'+[
     ['Claim','One active task. Start Hubstaff, then New task here: paste the Feather link and match the clock to Hubstaff.'],
     ['0:00–0:45 · Triage','Use the whole 45 minutes. Test the app end to end and capture drafts. <b>Broken</b> (won\'t launch, crashes, unstable): tell your HDM in the POD thread and unclaim in Feather. <b>Low-yield</b> (boots, but clearly can\'t reach 20+ valid findings: too polished, too few workflows): unclaim or release. No rating, scores or do_not_recommend tag.'],
