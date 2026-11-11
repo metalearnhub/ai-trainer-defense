@@ -48,15 +48,14 @@ function lastActAgoMin(t){var e=elapsed(t),xs=[];(t.findings||[]).forEach(functi
 var OUT={active:['In progress','info'],mfr:['MFR · awaiting HDM','warn'],submitted:['Submitted','ok'],form:['MFR submitted','warn'],outdated:['Outdated · submitted','warn'],unclaimed:['Unclaimed','crit'],released:['Released','warn']};
 var MFR_DOC='Include: finding count, Bug/FR split, workflows tested, what you tried and why you couldn\'t find more.';
 /* CheckSet Operations & Strategy Handbook (Nov 2026): standard = 30+ inside AHT; anything under 30 goes through the Slack MFR workflow (the Minimum Findings Form); minimum 10.
-   Checkpoints: boot 0:15 · viability 0:45 · MFR 2:00 · AHT 4:30. */
+   Checkpoints: triage window 0:00–0:45 (test freely, unclaim/release any time) · MFR 2:00 · AHT 4:30. */
 var STAGES=[
-  {id:'boot',a:0,b:15,n:'Boot',d:'Does it load and boot? If not, unclaim directly. No rating or tags.'},
-  {id:'explore',a:15,b:45,n:'Explore',d:'Map the main workflows and capture drafts. Broken or unusable at 0:45 → release.'},
+  {id:'explore',a:0,b:45,n:'Triage',d:'Use the full 45 minutes: test the whole app freely and capture drafts. Not worth it (won\'t boot, broken, untestable)? Unclaim or release any time before 0:45. No rating or tags.'},
   {id:'hunt',a:45,b:120,n:'Hunt',d:'Find and log. 2:00 checkpoint: under 5 → MFR and release; 5–9 → MFR and follow it.'},
   {id:'build',a:120,b:255,n:'Build',d:'Build toward 30+. Under 30 only goes in through the MFR workflow.'},
   {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: under 30 → Slack MFR workflow.'}
 ];
-function stageFor(t,m){return t&&t.huntDone&&m<45?STAGES[2]:stageOf(m)}
+function stageFor(t,m){return t&&t.huntDone&&m<45?STAGES[1]:stageOf(m)}
 function stageOf(m){for(var i=0;i<STAGES.length;i++)if(m<STAGES[i].b)return STAGES[i];return STAGES[STAGES.length-1]}
 /* pace model: learns your own capture and logging times from this task */
 function metrics(t){
@@ -75,8 +74,7 @@ function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitl
 function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function doNow(t){
   if(t.status!=='active')return null;var M=metrics(t),e=M.e,c=M.c;if(e>=AHT)return null;
-  if(e<15&&!t.huntDone)return{tone:'info',h:'Boot check · '+mmss((15-e)*60)+' left',p:'Open the app and run the main workflow once. Won\'t load or boot? Unclaim directly in Feather.'};
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Explore and capture drafts',p:'Map the main workflows and type what you see; details later. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
+  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left',p:'Test the whole app freely and type what you see; details later. Not worth it? Unclaim any time before 0:45. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
   if(c.n>=30)return null;
   var pr=oldestProg(t);
   if(pr){var spent=(elapsed(t)-(pr.startAt||elapsed(t)))/60,tg=M.target;return spent<=tg?{tone:'info',h:'Finish “'+first(pr)+'” within '+mmss((tg-spent)*60),p:'Budget '+mmss(tg*60)+' a finding to reach 30 by 4:15. Write the summary, run Flow, log in Feather, then mark it Done.'}:{tone:'warn',h:'Over budget on “'+first(pr)+'” by '+mmss((spent-tg)*60),p:'Wrap it up and mark it Done, or move it back to Not started and take the next one.'}}
@@ -97,16 +95,15 @@ function nextStep(t){
   if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
   if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
-  if(e<15&&!t.huntDone)return{tone:'info',h:'Boot check · '+mmss((15-e)*60)+' left',p:'Won\'t load, won\'t boot or can\'t be tested? Unclaim directly in Feather. No rating, scores or tags.'};
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Viability check at 0:45 · '+mmss((45-e)*60)+' left',p:'If the environment is broken or unusable by 0:45, release the task. Otherwise keep exploring.'};
+  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, broken, untestable or not worth it? Unclaim or release any time before 0:45 (no rating or tags). Otherwise keep going.'};
   var pf=planFound(e),pfl=planFloor(e);
   if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
   if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
   return{tone:'warn',h:'Well behind 30 pace ('+F+' vs '+Math.round(pf)+')',p:'Switch workflows, or start the Slack MFR workflow if the app has run out. There is no penalty for starting it.'};
 }
 var GATES=[
-  {id:'g15',m:15,t:'0:15',l:'Boot check · won\'t load → unclaim'},
-  {id:'g45',m:45,t:'0:45',l:'Viability · broken → release'},
+  {id:'g35',m:35,t:'0:35',l:'10 min left to unclaim freely'},
+  {id:'g45',m:45,t:'0:45',l:'Triage window closes · keep or release'},
   {id:'g110',m:110,t:'1:50',l:'10 min to the 2:00 checkpoint'},
   {id:'g120',m:120,t:'2:00',l:'MFR checkpoint · under 5 / 5–9'},
   {id:'g240',m:240,t:'4:00',l:'30 min left · check the mix'},
@@ -116,8 +113,8 @@ var GATES=[
 ];
 function gateMessage(t,g){
   var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
-  if(g.id==='g15')return'Boot check: if the app won\'t load, won\'t boot or can\'t be tested, unclaim directly in Feather. No rating or tags.'+tail;
-  if(g.id==='g45')return'Viability check: if the environment is broken or unusable, release the task. Otherwise keep going.'+tail;
+  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Not worth it (won\'t boot, broken, untestable)? Unclaim before 0:45. No rating or tags.'+tail;
+  if(g.id==='g45')return'0:45: triage window closes. Broken or unusable? Release now. Otherwise commit and keep going.'+tail;
   if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
   if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 30+.'+tail;
   if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Push for 30+ and check the Bug/FR mix; if you\'ll land under 30, get the MFR workflow ready.')+tail;
@@ -146,7 +143,7 @@ function alertUser(t,title,body,tone){
 function askPermission(){
   if(!('Notification' in window)){toast('Not supported','This browser can\'t show desktop notifications. In-app alerts and sound still work.','warn');return}
   Notification.requestPermission().then(function(p){IDX.settings.notify=p==='granted';saveIdx();render();
-    if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:15, 0:45, 1:50, 2:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
+    if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:35, 0:45, 1:50, 2:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
     else toast('Notifications blocked','Allow notifications for this site in Chrome\'s address bar (the icon left of the URL), then try again.','warn')})
 }
 function checkGates(){
@@ -195,7 +192,7 @@ function sideHtml(){
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
   '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
-function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:15, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
+function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:35, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
   var apps={};allTasks().forEach(function(t){if(t.app)apps[t.app]=1});
   var act=allTasks().filter(function(t){return t.status==='active'}),mfr=allTasks().filter(function(t){return t.status==='mfr'});
