@@ -275,3 +275,4 @@ textarea.in{resize:vertical}
 .stuck.on{flex-direction:column;align-items:stretch;gap:6px;padding:8px 10px;border-radius:9px;background:var(--crit-soft);color:var(--fg);font-weight:400}
 .stuck.on b{color:var(--crit)}.stuck.on.flow{background:var(--warn-soft)}.stuck.on.flow b{color:var(--warn)}
 .fcwrap{overflow-x:auto}.flowchart{width:100%;max-width:760px;min-width:520px;height:auto;display:block;font-family:var(--body)}
+.stuck.on.slow,.stuck.on.rec{background:var(--accent-soft)}.stuck.on.slow b,.stuck.on.rec b{color:var(--accent)}.stuckn{font-size:12px;color:var(--muted)}.stuckalt{border-top:1px dashed var(--line);padding-top:6px}
