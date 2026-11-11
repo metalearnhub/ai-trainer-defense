@@ -751,7 +751,7 @@ else h+='<p class="note">No hints at this tier. Run the P0 smoke test first, the
 p.innerHTML=h;
 }
 if(run.tab==='ref')p.innerHTML='<span class="lab">What the real app does</span><p class="note">Listed here but missing in the clone = feature request.</p><ul>'+app.features.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul><span class="lab">Release notes · known limitations</span><ul>'+app.notes.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>';
-if(run.tab==='kit')p.innerHTML='<div class="kit"><div><b>DECIDE</b><span>Reacts but fails = Bug. Absent vs the real app = FR. Works = Neither.</span></div><div><b>RANK</b><span>P0 core task blocked · P1 continues with severe limits · P2 non-core or cosmetic.</span></div><div><b>FILTER</b><span>1 External site · 2 Says unavailable · 3 Missing prerequisite · 4 Known limitation. Unavailable + P2 = never report.</span></div><div><b>WRITE</b><span>Summary "Section: control failure" or "Section: control should…". Path uses " -> ". Steps start by opening the app. FR steps = N/A.</span></div><div><b>PROVE</b><span>Actual = defect + baseline + plain why + impact. Always "the user", never "I tested".</span></div><div><b>GUARD · '+d.t.toUpperCase()+'</b><span>'+guardText(d.guard)+'</span></div></div>';
+if(run.tab==='kit')p.innerHTML='<div class="kit"><div><b>DECIDE</b><span>Reacts but fails = Bug. Absent vs the real app = FR. Works = Neither.</span></div><div><b>RANK</b><span>P0 core task blocked · P1 continues with severe limits · P2 non-core or cosmetic.</span></div><div><b>FILTER</b><span>1 External site · 2 Says unavailable · 3 Missing prerequisite · 4 Known limitation. Unavailable + P2 = never report.</span></div><div><b>WRITE</b><span>Summary "Page - Component - Failure (trigger)" or "Page - Capability - Should…". Path uses " -> ". Steps start by opening the app. FR steps = N/A.</span></div><div><b>PROVE</b><span>Actual = defect + baseline + plain why + impact. Always "the user", never "I tested".</span></div><div><b>GUARD · '+d.t.toUpperCase()+'</b><span>'+guardText(d.guard)+'</span></div></div>';
 if(run.tab==='log'){const ids=run.order;p.innerHTML='<span class="lab">Logged this mission</span>'+(ids.length?ids.map(id=>{const x=findDef(id);return '<div class="logrow"><span>'+esc(x.control||x.label)+'</span><span class="mono">'+fmtT(run.logged[id].at)+'</span></div>'}).join(''):'<p class="note">Nothing logged yet.</p>')}
 }
 function findDef(id){const a=APP();return a.defects.find(x=>x.id===id)||a.traps.find(x=>x.id===id)}
@@ -901,21 +901,21 @@ function pickD(D,diff){const v=DIFFS[diff],n=v.opts-1;return shuffle(D).sort((a,
 function ctrl(d){return /^["“]/.test(d.control)?d.control:lcFirst(d.control)}
 function distractors(d,key){
 const A=APP().name,isBug=d.kind==='bug';
-const rest=isBug?d.control+' '+d.fail:d.control+' should '+d.should;
-const sum=d.page+': '+rest;
+const rest=isBug?d.control+' - '+ucFirst(d.fail):d.control+' - Should '+d.should;
+const sum=d.page+' - '+rest;
 const steps=isBug?numbered(d.steps):'N/A';
 const expd='The '+ctrl(d)+' on the '+d.page+' should '+d.exp+', allowing the user to '+d.outcome+'.';
 const act=d.defect+' '+d.baseline+' '+d.impact;
 const cr=d.crumbs,sw=isBug?[...d.steps]:[];if(sw.length>=3){const x=sw[1];sw[1]=sw[2];sw[2]=x}
 const M={
 summary:{ok:sum,D:[
-{lv:1,t:d.page+': '+d.control+' has a problem',r:'Name the specific failure or missing capability, never "has a problem".'},
+{lv:1,t:d.page+' - '+d.control+' - Has a problem',r:'Name the specific failure or missing capability, never "has a problem".'},
 {lv:1,t:(isBug?'Bug: ':'Feature Request: ')+sum,r:'Never prefix the summary with "Bug" or "Feature Request".'},
 {lv:2,t:d.prio+' - '+sum,r:'Never prefix the summary with a priority like "'+d.prio+'".'},
-isBug?{lv:3,t:d.page+': '+d.control+' should '+d.exp,r:'"Should" is the FR formula. A bug summary states the failure.'}:{lv:3,t:d.page+': '+d.control+' does not '+d.should,r:'FR summaries must always include the word "should".'},
-{lv:3,t:ucFirst(rest),r:'Start with the page or section name followed by a colon.'},
-{lv:4,t:d.page+' - '+rest,r:'Separate the section from the rest with a colon, not a dash.'},
-isBug?{lv:4,t:d.page+': '+d.control+' sometimes '+d.fail,r:'State the observed failure plainly. No hedging words such as "sometimes".'}:{lv:4,t:d.page+': '+d.control+' could '+d.should,r:'FR summaries use "should", not "could".'}]},
+isBug?{lv:3,t:d.page+' - '+d.control+' - Should '+d.exp,r:'"Should" is the FR formula. A bug summary states the failure.'}:{lv:3,t:d.page+' - '+d.control+' - Does not '+d.should,r:'FR summaries must always include the word "should".'},
+{lv:3,t:ucFirst(rest),r:'Start with the page or section name: Page - Component - Failure.'},
+{lv:4,t:d.page+': '+(isBug?d.control+' '+d.fail:d.control+' should '+d.should),r:'Separate each part with " - " (Page - Component - Failure), not a colon.'},
+isBug?{lv:4,t:d.page+' - '+d.control+' - Sometimes '+d.fail,r:'State the observed failure plainly. No hedging words such as "sometimes".'}:{lv:4,t:d.page+' - '+d.control+' - Could '+d.should,r:'FR summaries use "should", not "could".'}]},
 path:{ok:cr.join(' -> '),D:[
 {lv:1,t:cr[cr.length-1],r:'Give the full breadcrumb path, not one element.'},
 {lv:2,t:[...cr].reverse().join(' -> '),r:'Breadcrumbs run from the top level down to the control.'},
