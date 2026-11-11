@@ -50,7 +50,7 @@ var MFR_DOC='Include: finding count, Bug/FR split, workflows tested, what you tr
 /* CheckSet Operations & Strategy Handbook (Nov 2026): standard = 30+ inside AHT; anything under 30 goes through the Slack MFR workflow (the Minimum Findings Form); minimum 10.
    Checkpoints: triage window 0:00–0:45 (test freely, unclaim/release any time) · MFR 2:00 · AHT 4:30. */
 var STAGES=[
-  {id:'explore',a:0,b:45,n:'Triage',d:'Use the full 45 minutes: test the whole app freely and capture drafts. Not worth it (won\'t boot, broken, untestable)? Unclaim or release any time before 0:45. No rating or tags.'},
+  {id:'explore',a:0,b:45,n:'Triage',d:'Use the full 45 minutes: test the whole app freely and capture drafts. Unclaim or release before 0:45 if it won\'t boot, crashes or is unstable, or if it boots but clearly can\'t yield 20+ findings (too polished, too few workflows). No rating or tags.'},
   {id:'hunt',a:45,b:120,n:'Hunt',d:'Find and log. 2:00 checkpoint: under 5 → MFR and release; 5–9 → MFR and follow it.'},
   {id:'build',a:120,b:255,n:'Build',d:'Build toward 30+. Under 30 only goes in through the MFR workflow.'},
   {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: under 30 → Slack MFR workflow.'}
@@ -74,7 +74,7 @@ function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitl
 function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function doNow(t){
   if(t.status!=='active')return null;var M=metrics(t),e=M.e,c=M.c;if(e>=AHT)return null;
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left',p:'Test the whole app freely and type what you see; details later. Not worth it? Unclaim any time before 0:45. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
+  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left',p:'Test the whole app freely and type what you see. Unstable, or clearly can\'t yield 20+ findings? Unclaim before 0:45. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
   if(c.n>=30)return null;
   var pr=oldestProg(t);
   if(pr){var spent=(elapsed(t)-(pr.startAt||elapsed(t)))/60,tg=M.target;return spent<=tg?{tone:'info',h:'Finish “'+first(pr)+'” within '+mmss((tg-spent)*60),p:'Budget '+mmss(tg*60)+' a finding to reach 30 by 4:15. Write the summary, run Flow, log in Feather, then mark it Done.'}:{tone:'warn',h:'Over budget on “'+first(pr)+'” by '+mmss((spent-tg)*60),p:'Wrap it up and mark it Done, or move it back to Not started and take the next one.'}}
@@ -95,14 +95,14 @@ function nextStep(t){
   if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
   if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, broken, untestable or not worth it? Unclaim or release any time before 0:45 (no rating or tags). Otherwise keep going.'};
+  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Boots but clearly can\'t yield 20+ findings (too polished, too few workflows) → unclaim/release too. Before 0:45, no rating or tags.'};
   var pf=planFound(e),pfl=planFloor(e);
   if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
   if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
   return{tone:'warn',h:'Well behind 30 pace ('+F+' vs '+Math.round(pf)+')',p:'Switch workflows, or start the Slack MFR workflow if the app has run out. There is no penalty for starting it.'};
 }
 var GATES=[
-  {id:'g35',m:35,t:'0:35',l:'10 min left to unclaim freely'},
+  {id:'g35',m:35,t:'0:35',l:'10 min left · unstable or can\'t reach 20+? unclaim'},
   {id:'g45',m:45,t:'0:45',l:'Triage window closes · keep or release'},
   {id:'g110',m:110,t:'1:50',l:'10 min to the 2:00 checkpoint'},
   {id:'g120',m:120,t:'2:00',l:'MFR checkpoint · under 5 / 5–9'},
@@ -113,8 +113,8 @@ var GATES=[
 ];
 function gateMessage(t,g){
   var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
-  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Not worth it (won\'t boot, broken, untestable)? Unclaim before 0:45. No rating or tags.'+tail;
-  if(g.id==='g45')return'0:45: triage window closes. Broken or unusable? Release now. Otherwise commit and keep going.'+tail;
+  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Unstable or broken, or can you see it won\'t yield 20+ findings (too polished, too few workflows)? Unclaim before 0:45. No rating or tags.'+tail;
+  if(g.id==='g45')return'0:45: triage window closes. Broken, unstable or clearly short of 20+? Release now. Otherwise commit and keep going toward 30+.'+tail;
   if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
   if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 30+.'+tail;
   if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Push for 30+ and check the Bug/FR mix; if you\'ll land under 30, get the MFR workflow ready.')+tail;
