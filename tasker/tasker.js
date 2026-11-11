@@ -129,7 +129,7 @@ var STOP={'the':1,'and':1,'for':1,'with':1,'that':1,'this':1,'when':1,'from':1,'
 function toks(s){var o={};String(s||'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).forEach(function(w){if(w.length<3||STOP[w])return;w=w.replace(/(ing|ed|es|s)$/,'');if(w.length>=3)o[w]=1});return o}
 function sim(a,b){var ka=Object.keys(a),kb=Object.keys(b);if(!ka.length||!kb.length)return{s:0,k:0};var k=0;ka.forEach(function(w){if(b[w])k++});return{s:2*k/(ka.length+kb.length),k:k}}
 function pastFor(t){var key=appKey(t.app),out=[];allTasks().forEach(function(o){if(o.id===t.id||appKey(o.app)!==key)return;(o.findings||[]).forEach(function(f){out.push({f:f,task:o})})});return out}
-function dupOf(t,f){if(String(f.text||'').trim().length<12)return null;var a=toks(f.text),best=null;pastFor(t).forEach(function(p){var r=sim(a,toks(p.f.text));if(r.k>=3&&r.s>=.5&&(!best||r.s>best.s))best={s:r.s,f:p.f,task:p.task}});(t.findings||[]).forEach(function(o){if(o.id===f.id)return;var r=sim(a,toks(o.text));if(r.k>=3&&r.s>=.6&&(!best||r.s>best.s))best={s:r.s,f:o,task:t,same:true}});return best}
+function dupOf(t,f){if(String(f.text||'').trim().length<12)return null;var a=toks(ftxt(f)),best=null;pastFor(t).forEach(function(p){var r=sim(a,toks(ftxt(p.f)));if(r.k>=3&&r.s>=.5&&(!best||r.s>best.s))best={s:r.s,f:p.f,task:p.task}});(t.findings||[]).forEach(function(o){if(o.id===f.id)return;var r=sim(a,toks(ftxt(o)));if(r.k>=3&&r.s>=.6&&(!best||r.s>best.s))best={s:r.s,f:o,task:t,same:true}});return best}
 function dupHtml(d){if(!d)return'';var first=String(d.f.text||'').split('\n')[0].slice(0,140);return'<div class="duphint">Possible duplicate'+(d.same?' in this task':' of '+esc(day(d.task.createdAt))+' · '+esc((d.task.featherId||'').slice(0,8)))+' ('+Math.round(d.s*100)+'% match): “'+esc(first)+'”</div>'}
 
 /* ---------- notifications & sound ---------- */
@@ -177,18 +177,18 @@ if(IDX.cur&&!TASKS[IDX.cur]){IDX.cur=null;VIEW.mode='empty'}
 function render(){
   if(!sessOk()){root.innerHTML=authScreen();var ae=$('#aCode')||$('#aEmail');if(ae&&!ae.value)ae.focus();return}
   var t=cur(),keep={};['main','fscroll','tright'].forEach(function(id){var el=$('#'+id);if(el)keep[id]=el.scrollTop});
-  root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
+  root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode==='lib'?libHtml():VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
   $$('.f textarea').forEach(grow);
   Object.keys(keep).forEach(function(id){var el=$('#'+id);if(el)el.scrollTop=keep[id]});
   syncBits();tick();
 }
 function sideHtml(){
-  var q=VIEW.q.toLowerCase(),ts=allTasks().filter(function(t){if(!q)return true;return(t.app+' '+(t.featherId||'')+' '+(t.findings||[]).map(function(f){return f.text}).join(' ')+' '+(t.notes||'')).toLowerCase().indexOf(q)>=0});
+  var q=VIEW.q.toLowerCase(),ts=allTasks().filter(function(t){if(!q)return true;return(t.app+' '+(t.featherId||'')+' '+(t.findings||[]).map(function(f){return f.text+' '+(f.rub?RF.map(function(k){return f.rub[k.k]||''}).join(' '):'')}).join(' ')+' '+(t.notes||'')).toLowerCase().indexOf(q)>=0});
   var act=ts.filter(function(t){return t.status==='active'||t.status==='mfr'}),hist=ts.filter(function(t){return!(t.status==='active'||t.status==='mfr')});
   var item=function(t){var c=counts(t);return'<button class="titem" data-a="open" data-id="'+t.id+'" aria-current="'+(t.id===IDX.cur&&VIEW.mode==='task')+'"><b>'+esc(t.app||'Untitled app')+'</b><span>'+hm(elapsed(t))+' · '+c.n+'/30 · '+OUT[t.status][0]+'</span><span>'+day(t.createdAt)+(t.featherId?' · '+t.featherId.slice(0,8):'')+'</span></button>'};
   var notif='Notification' in window?(Notification.permission==='granted'&&IDX.settings.notify?'Desktop reminders on':Notification.permission==='denied'?'Reminders blocked in Chrome':'Turn on desktop reminders'):'Desktop reminders unsupported';
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
-  '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
+  '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
   '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
@@ -262,7 +262,7 @@ function fHtml(t,f){
   var d=dupOf(t,f);
   return'<div class="f '+f.status+(d?' dup':'')+'" data-fid="'+f.id+'"><button class="st '+f.status+'" data-a="cycle" data-id="'+f.id+'" aria-label="Status: '+f.status+'. Click to change">'+(f.status==='done'?'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'')+'</button>'+
   '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><div class="fh"><button class="chip '+f.type+'" data-a="ftype" data-id="'+f.id+'">'+(f.type==='bug'?'BUG':f.type==='fr'?'FR':'TYPE?')+'</button><span class="lab">'+(f.status==='draft'?'Not started':f.status==='progress'?'In progress':'Done')+' · found at '+hm(f.at||0)+(f.status==='done'&&f.startAt!=null&&f.doneAt!=null?' · logged in '+mmss(f.doneAt-f.startAt):'')+'</span>'+(f.status==='progress'?'<span class="ftimer" data-ft="'+f.id+'"></span>':'')+'<span class="sp"></span>'+(VIEW.confirmDel===f.id?'<button class="btn sm danger" data-a="delF" data-id="'+f.id+'">Confirm delete</button>':'<button class="btn sm ghost" data-a="delF" data-id="'+f.id+'" aria-label="Delete finding">Delete</button>')+'</div>'+
-  '<textarea data-in="ftext" data-id="'+f.id+'" rows="2" aria-label="Finding notes" placeholder="First line: summary. Then steps, expected vs actual…">'+esc(f.text||'')+'</textarea><div class="fmtbox">'+fmtHint(f)+'</div><div class="dupbox">'+dupHtml(d)+'</div></div></div>';
+  '<textarea data-in="ftext" data-id="'+f.id+'" rows="2" aria-label="Finding notes" placeholder="First line: summary. Then steps, expected vs actual…">'+esc(f.text||'')+'</textarea><div class="fmtbox">'+fmtHint(f)+'</div><div class="dupbox">'+dupHtml(d)+'</div>'+rubCardHtml(t,f)+'</div></div>';
 }
 function fmtHint(f){
   var line=String(f.text||'').split('\n')[0].trim();if(line.length<8||f.status==='draft')return'';
@@ -320,7 +320,7 @@ document.addEventListener('click',function(ev){
   if(a==='toggleDone'){IDX.settings.showDone=!IDX.settings.showDone;saveIdx();render();return}
   if(a==='filter'){VIEW.filter=b.dataset.f;render();return}
   if(a==='addType'){VIEW.addType=b.dataset.t;var ai0=$('#addIn');if(ai0)ai0.placeholder=(VIEW.addType==='fr'?'Page: Capability should …':'Page: Component failure when trigger')+'  (Enter adds a draft)';$$('[data-a="addType"]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});var ai=$('#addIn');if(ai)ai.focus();return}
-  if(a==='cycle'){var f=findF(t,b.dataset.id);f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;f.u=Date.now();saveTask(t);render();if(f.status==='done')toast('Logged · '+counts(t).n+' done','Find it under Done at the bottom of the list.','ok');checkGates();return}
+  if(a==='cycle'){var f=findF(t,b.dataset.id);if(f.status==='progress'){openRub(t,f,'done');return}f.status=f.status==='draft'?'progress':f.status==='progress'?'done':'draft';var now=elapsed(t);if(f.status==='progress'){f.startAt=now;f.w1=0;f.w2=0}if(f.status==='done'){f.doneAt=now;if(f.startAt==null)f.startAt=now}if(f.status==='draft'){delete f.doneAt;delete f.startAt}t.lastAct=now;f.u=Date.now();saveTask(t);render();if(f.status==='done')toast('Logged · '+counts(t).n+' done','Find it under Done at the bottom of the list.','ok');checkGates();return}
   if(a==='ftype'){var g=findF(t,b.dataset.id);g.type=g.type==='bug'?'fr':g.type==='fr'?'unk':'bug';g.u=Date.now();saveTask(t);render();return}
   if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});(t.delF=t.delF||[]).push(b.dataset.id);VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
   if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});var did=t.id;IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();pushDelete(did);toast('Task deleted','','ok');return}
@@ -375,6 +375,140 @@ document.addEventListener('keydown',function(ev){
   if((ev.key==='n'||ev.key==='N')&&VIEW.mode==='task'){var ai=$('#addIn');if(ai){ev.preventDefault();ai.focus()}}
 });
 window.addEventListener('storage',function(ev){if(!ev.key||ev.key.indexOf(P)!==0||!document.hidden)return;IDX=lsGet('index',IDX);loadTasks();render()});
+
+/* ---------- rubric records: the real rubric you filed, split by field ---------- */
+var RF=[
+  {k:'summary',l:'Summary',re:/^(issue |finding )?(summary|title)$/},
+  {k:'prio',l:'Priority',re:/^(priority|severity)( level)?$/},
+  {k:'type',l:'Issue Type',re:/^(issue |finding )?(type|classification|category)( of finding)?$|^bug or feature request$/},
+  {k:'path',l:'Page or Workflow',re:/^(page|workflow|location|path|breadcrumb|page or workflow|page workflow|page section|page or section|section)$/},
+  {k:'steps',l:'Reproduction Steps',re:/^(steps|reproduction steps|steps to reproduce|repro steps|reproduction)$/},
+  {k:'expected',l:'Expected Behavior',re:/^expected( behavior| behaviour| result| outcome)?$/},
+  {k:'actual',l:'Actual Behavior',re:/^actual( behavior| behaviour| result| outcome)?$/},
+  {k:'why',l:'Priority Justification',re:/^(priority justification|justification|why( the)? (classification|it) is valid|why valid|rationale|classification justification|why)$/},
+  {k:'video',l:'Video Evidence',re:/^(video( evidence| link)?|evidence|recording|screen recording|loom)$/}
+];
+var RFK={};RF.forEach(function(x){RFK[x.k]=x});
+var FORMK=['summary','prio','type','path','steps','expected','actual','video'];/* Priority Justification is parsed only so it doesn't spill into Actual; not kept */
+var KEEP=RF.filter(function(x){return x.k!=='why'});
+function rfFor(label){var n=String(label||'').toLowerCase().replace(/[^a-z ]+/g,' ').replace(/\s+/g,' ').trim();if(!n||n.length>45)return null;for(var i=0;i<RF.length;i++)if(RF[i].re.test(n))return RF[i];return null}
+function normType(v){v=String(v||'').toLowerCase();return/feature|\bfr\b|request/.test(v)?'fr':/bug|defect/.test(v)?'bug':''}
+function normPrio(v){var m=String(v||'').toUpperCase().match(/P\s?([0-2])/);return m?'P'+m[1]:''}
+function parseRubric(raw){
+  var out={},cur=null,buf=[],hits=0,lines=String(raw||'').replace(/\r/g,'').split('\n');
+  function flush(){if(cur){var v=buf.join('\n').replace(/^\s+|\s+$/g,'');out[cur.k]=out[cur.k]?out[cur.k]+'\n'+v:v}buf=[]}
+  lines.forEach(function(line){
+    var clean=line.replace(/^\s*(#{1,6}\s*|>\s*|[-*•]\s+)/,'').replace(/\*\*|__/g,'');
+    var m=clean.match(/^\s*([^:]{2,45}?)\s*:\s*(.*)$/),f=null,rest='';
+    if(m){f=rfFor(m[1]);rest=m[2]}
+    if(!f&&clean.trim().length<=45&&!/^\s*\d+[.)]/.test(clean)){f=rfFor(clean);rest=''}
+    if(f){flush();cur=f;hits++;if(rest)buf.push(rest)}else if(cur)buf.push(line);else buf.push(line);
+  });
+  if(cur)flush();else{var all=buf.join('\n').trim();buf=[];if(all){var ls=all.split('\n');out.summary=ls[0].trim();if(ls.length>1)out.actual=ls.slice(1).join('\n').trim()}}
+  if(out.type)out.type=normType(out.type)||out.type;if(out.prio)out.prio=normPrio(out.prio)||out.prio;
+  return{fields:out,hits:hits};
+}
+function rubText(r){return r?[r.summary,r.path,r.actual,r.expected].filter(Boolean).join(' '):''}
+function ftxt(f){return f.rub?rubText(f.rub):String(f.text||'')}
+function normPath(p){return String(p||'').toLowerCase().replace(/\s*(->|→|>|\/)\s*/g,'>').replace(/[^a-z0-9>]+/g,' ').trim()}
+function rubMatches(rub,selfTask,selfFid){
+  var a=toks(rub.summary),aa=toks(rub.actual),np=normPath(rub.path),out=[];
+  allTasks().forEach(function(t){(t.findings||[]).forEach(function(f){
+    if(t.id===selfTask&&f.id===selfFid)return;
+    var r=f.rub||{summary:String(f.text||'').split('\n')[0],actual:String(f.text||'').split('\n').slice(1).join(' '),type:f.type};
+    var s1=sim(a,toks(r.summary)),s2=sim(aa,toks(r.actual)),pe=np&&np===normPath(r.path);
+    if(!((s1.k>=3&&s1.s>=.5)||(s2.k>=4&&s2.s>=.5)||(pe&&s1.k>=2&&s1.s>=.35)))return;
+    var sc=Math.max(s1.s,s2.s*.9)+(pe?.15:0),kind='dup',why='';
+    var ta=rub.type||'',tb=r.type||f.type||'';
+    if(ta&&tb&&ta!=='unk'&&tb!=='unk'&&ta!==tb){kind='conflict';why='filed as '+(tb==='bug'?'Bug':'FR')+' there, '+(ta==='bug'?'Bug':'FR')+' here'}
+    else if(rub.prio&&r.prio&&rub.prio!==r.prio){kind='conflict';why=r.prio+' there, '+rub.prio+' here'}
+    out.push({t:t,f:f,r:r,s:Math.min(1,sc),kind:kind,why:why,same:t.id===selfTask,path:pe});
+  })});
+  return out.sort(function(x,y){return y.s-x.s}).slice(0,6);
+}
+function matchesHtml(ms){
+  if(!ms.length)return'<p class="hint ok" style="margin:0">No duplicates or conflicts across your recorded work.</p>';
+  return ms.map(function(m){var lab=m.kind==='conflict'?'Conflict':m.same?'Duplicate in this task':'Possible duplicate';
+    return'<div class="rmatch '+m.kind+'"><b>'+lab+' · '+Math.round(m.s*100)+'%'+(m.path?' · same page/workflow':'')+'</b>'+(m.why?'<span>'+esc(m.why)+'</span>':'')+'<span class="m">'+esc(m.t.app||'Untitled')+' · '+day(m.t.createdAt)+(m.t.featherId?' · '+esc(m.t.featherId.slice(0,8)):'')+'</span><span>'+esc(String(m.r.summary||'').slice(0,160))+'</span></div>'}).join('');
+}
+var RUB=null;
+function openRub(t,f,mode){
+  RUB={tid:t.id,fid:f.id,mode:mode,fields:JSON.parse(JSON.stringify(f.rub||{})),raw:(f.rub&&f.rub.raw)||''};
+  if(!f.rub){RUB.fields.type=f.type==='fr'?'fr':f.type==='bug'?'bug':''}
+  var el=$('#rubModal');if(el)el.remove();el=document.createElement('div');el.id='rubModal';el.className='rmodal';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','rubTitle');
+  document.body.appendChild(el);drawRub();var r=$('#rubRaw');if(r)r.focus();
+}
+function rubField(k){var x=RFK[k],v=RUB.fields[k]||'';
+  if(k==='type')return'<label class="rf"><span class="lab">Issue Type</span><select class="in" data-rf="type"><option value="">—</option><option value="bug"'+(v==='bug'?' selected':'')+'>Bug</option><option value="fr"'+(v==='fr'?' selected':'')+'>Feature request</option></select></label>';
+  if(k==='prio')return'<label class="rf"><span class="lab">Priority</span><select class="in" data-rf="prio"><option value="">—</option>'+['P0','P1','P2'].map(function(p){return'<option'+(v===p?' selected':'')+'>'+p+'</option>'}).join('')+'</select></label>';
+  var big=/steps|expected|actual/.test(k);
+  return'<label class="rf'+(big?' wide':'')+(k==='summary'||k==='path'||k==='video'?' wide':'')+'"><span class="lab">'+x.l+'</span>'+(big?'<textarea class="in" rows="3" data-rf="'+k+'">'+esc(v)+'</textarea>':'<input class="in" data-rf="'+k+'" value="'+esc(v)+'">')+'</label>';
+}
+function drawRub(){
+  var el=$('#rubModal');if(!el||!RUB)return;var t=TASKS[RUB.tid],f=t&&findF(t,RUB.fid);if(!f){closeRub();return}
+  var done=RUB.mode==='done';
+  el.innerHTML='<div class="rsheet"><div class="row"><div style="min-width:0"><h2 id="rubTitle" style="margin:0;font-size:18px">'+(done?'Record the rubric you filed':'Rubric record')+'</h2><p class="hint" style="margin:2px 0 0">'+esc(t.app||'')+' · '+esc(String(f.text||'').split('\n')[0].slice(0,90))+'</p></div><span class="sp"></span><button class="btn sm ghost" data-a="rubCancel" aria-label="Close">✕</button></div>'+
+  '<label class="rf wide"><span class="lab">Paste the full rubric from Feather</span><textarea class="in" id="rubRaw" rows="5" placeholder="Paste everything you submitted: Summary, Priority, Issue Type, Page or Workflow, Reproduction Steps, Expected Behavior, Actual Behavior…">'+esc(RUB.raw)+'</textarea><span class="hint" id="rubParse">'+(RUB.raw?parseNote():'Fields fill in automatically when you paste. Check them before saving.')+'</span></label>'+
+  '<div class="rchecks"><span class="lab">Duplicates and conflicts</span><div id="rubChecks">'+matchesHtml(rubMatches(RUB.fields,RUB.tid,RUB.fid))+'</div></div>'+
+  '<div class="rgrid" id="rubGrid">'+FORMK.map(rubField).join('')+'</div>'+
+  '<div class="row rfoot" style="flex-wrap:wrap;gap:8px"><span class="hint" id="rubErr" style="color:var(--crit)"></span><span class="sp"></span>'+(done?'<button class="btn" data-a="rubSkip">Done without rubric</button><button class="btn" data-a="rubCancel">Keep in progress</button>':'<button class="btn" data-a="rubCancel">Cancel</button>')+'<button class="btn pri" data-a="rubSave">'+(done?'Save rubric · mark Done':'Save rubric')+'</button></div></div>';
+  $$('#rubGrid textarea').forEach(grow);
+}
+function parseNote(){var p=parseRubric(RUB.raw);return p.hits?'Split into '+p.hits+' field'+(p.hits>1?'s':'')+'. Check them below.':'No field labels found. First line went to Summary and the rest to Actual; adjust below.'}
+function closeRub(){var el=$('#rubModal');if(el)el.remove();RUB=null}
+function refreshRubChecks(){var c=$('#rubChecks');if(c&&RUB)c.innerHTML=matchesHtml(rubMatches(RUB.fields,RUB.tid,RUB.fid))}
+function markDone(t,f){var now=elapsed(t);f.status='done';f.doneAt=now;if(f.startAt==null)f.startAt=now;t.lastAct=now;f.u=Date.now()}
+function saveRub(skip){
+  if(!RUB)return;var t=TASKS[RUB.tid],f=t&&findF(t,RUB.fid);if(!f){closeRub();return}var done=RUB.mode==='done';
+  if(!skip){var r=RUB.fields;if(!String(r.summary||'').trim()){$('#rubErr').textContent='Add at least the Summary.';var s=$('[data-rf="summary"]');if(s)s.focus();return}
+    var keep={};KEEP.forEach(function(x){if(String(r[x.k]||'').trim())keep[x.k]=String(r[x.k]).trim()});keep.raw=RUB.raw;keep.at=Date.now();keep.app=t.app;f.rub=keep;
+    if(keep.type==='bug'||keep.type==='fr')f.type=keep.type}
+  if(done)markDone(t,f);else f.u=Date.now();
+  saveTask(t);closeRub();render();
+  if(done)toast('Logged · '+counts(t).n+' done',skip?'No rubric recorded. Add it later from the finding.':'Rubric recorded for history and duplicate checks.','ok');else toast('Rubric saved','','ok');
+  if(done)checkGates();
+}
+document.addEventListener('input',function(ev){
+  if(!RUB)return;var el=ev.target;
+  if(el.id==='rubRaw'){RUB.raw=el.value;var p=parseRubric(el.value),keepType=RUB.fields.type;RUB.fields=p.fields;if(!RUB.fields.type&&keepType)RUB.fields.type=keepType;
+    $('#rubGrid').innerHTML=FORMK.map(rubField).join('');$$('#rubGrid textarea').forEach(grow);$('#rubParse').textContent=el.value?parseNote():'';refreshRubChecks();return}
+  if(el.dataset&&el.dataset.rf){RUB.fields[el.dataset.rf]=el.value;if(el.tagName==='TEXTAREA')grow(el);clearTimeout(RUB.tm);RUB.tm=setTimeout(refreshRubChecks,300)}
+});
+document.addEventListener('change',function(ev){if(RUB&&ev.target.dataset&&ev.target.dataset.rf){RUB.fields[ev.target.dataset.rf]=ev.target.value;refreshRubChecks()}});
+document.addEventListener('keydown',function(ev){if(!RUB)return;if(ev.key==='Escape'){ev.preventDefault();if(!RUB.raw)closeRub()}else if(ev.key==='Enter'&&(ev.metaKey||ev.ctrlKey)){ev.preventDefault();saveRub(false)}},true);
+function rubCardHtml(t,f){
+  if(f.status!=='done')return f.rub?'<div class="rubline"><span class="lab">Rubric on file</span><button class="btn sm ghost" data-a="rubEdit" data-id="'+f.id+'">View</button></div>':'';
+  if(!f.rub)return'<div class="rubline warn"><span>No rubric recorded yet.</span><button class="btn sm" data-a="rubEdit" data-id="'+f.id+'">Add rubric</button></div>';
+  var r=f.rub;return'<div class="rubcard"><div class="row" style="gap:6px;flex-wrap:wrap">'+(r.prio?'<span class="pill info">'+esc(r.prio)+'</span>':'')+'<b style="min-width:0;overflow-wrap:anywhere">'+esc(r.summary||'')+'</b><span class="sp"></span><button class="btn sm ghost" data-a="rubEdit" data-id="'+f.id+'">Rubric</button></div>'+(r.path?'<span class="m">'+esc(r.path)+'</span>':'')+'</div>';
+}
+/* ---------- rubric library: every recorded rubric, searchable ---------- */
+function allRubrics(){var out=[];allTasks().forEach(function(t){(t.findings||[]).forEach(function(f){if(f.rub)out.push({t:t,f:f,r:f.rub})})});return out.sort(function(a,b){return(b.r.at||0)-(a.r.at||0)})}
+function libFiltered(){var q=(VIEW.libQ||'').toLowerCase(),ty=VIEW.libType||'all',ap=VIEW.libApp||'';
+  return allRubrics().filter(function(x){if(ty!=='all'&&(x.r.type||x.f.type)!==ty)return false;if(ap&&appKey(x.t.app)!==ap)return false;if(!q)return true;
+    return(KEEP.map(function(k){return x.r[k.k]||''}).join(' ')+' '+x.t.app+' '+(x.t.featherId||'')).toLowerCase().indexOf(q)>=0})}
+function libListHtml(){var xs=libFiltered();if(!xs.length)return'<p class="hint">'+(allRubrics().length?'No rubric matches.':'No rubrics recorded yet. Mark a finding Done and paste the rubric you filed.')+'</p>';
+  return xs.slice(0,300).map(function(x){var r=x.r,ty=r.type||x.f.type;return'<details class="libitem"><summary><span class="chip '+ty+'">'+(ty==='bug'?'BUG':ty==='fr'?'FR':'?')+'</span>'+(r.prio?'<span class="pill info">'+esc(r.prio)+'</span>':'')+'<b>'+esc(r.summary||'(no summary)')+'</b><span class="m">'+esc(x.t.app||'')+' · '+day(x.t.createdAt)+'</span></summary><div class="libbody">'+
+    KEEP.filter(function(k){return k.k!=='summary'&&k.k!=='type'&&k.k!=='prio'&&r[k.k]}).map(function(k){return'<div class="libf"><div class="row"><span class="lab">'+k.l+'</span><span class="sp"></span><button class="btn sm ghost" data-a="copyRf" data-t="'+x.t.id+'" data-f="'+x.f.id+'" data-k="'+k.k+'">Copy</button></div><div class="libv">'+esc(r[k.k])+'</div></div>'}).join('')+
+    '<div class="row" style="gap:8px"><button class="btn sm" data-a="open" data-id="'+x.t.id+'">Open task</button><button class="btn sm ghost" data-a="copyRf" data-t="'+x.t.id+'" data-f="'+x.f.id+'" data-k="raw">Copy full rubric</button></div></div></details>'}).join('')}
+function libHtml(){var all=allRubrics(),apps={};all.forEach(function(x){apps[appKey(x.t.app)]=x.t.app});var bugs=all.filter(function(x){return(x.r.type||x.f.type)==='bug'}).length;
+  return'<div class="wrap lib"><div class="card"><div class="row"><h1 style="margin:0;font-size:22px">Rubric library</h1><span class="sp"></span><button class="btn sm" data-a="libCsv">Export CSV</button><button class="btn sm ghost" data-a="libClose">Back</button></div>'+
+  '<p class="hint" style="margin:0">'+all.length+' rubric'+(all.length===1?'':'s')+' recorded · '+bugs+' Bugs · '+(all.length-bugs)+' FRs · '+Object.keys(apps).length+' app'+(Object.keys(apps).length===1?'':'s')+'. New rubrics are checked against all of these for duplicates and conflicts.</p>'+
+  '<div class="row" style="gap:8px;flex-wrap:wrap"><input class="in" id="libQ" placeholder="Search every field: summary, page, steps, expected, actual…" value="'+esc(VIEW.libQ||'')+'" style="flex:1;min-width:220px" aria-label="Search rubrics"><select class="in" id="libType" style="width:auto" aria-label="Type"><option value="all">All types</option><option value="bug"'+(VIEW.libType==='bug'?' selected':'')+'>Bugs</option><option value="fr"'+(VIEW.libType==='fr'?' selected':'')+'>FRs</option></select><select class="in" id="libApp" style="width:auto" aria-label="App"><option value="">All apps</option>'+Object.keys(apps).sort().map(function(k){return'<option value="'+esc(k)+'"'+(VIEW.libApp===k?' selected':'')+'>'+esc(apps[k])+'</option>'}).join('')+'</select></div></div><div class="liblist" id="libList">'+libListHtml()+'</div></div>'}
+function libCsv(){var cols=['app','feather_id','task_date'].concat(KEEP.map(function(k){return k.k}));var q=function(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"'};
+  var rows=[cols.join(',')].concat(allRubrics().map(function(x){return[x.t.app,x.t.featherId||'',new Date(x.t.createdAt).toISOString().slice(0,10)].concat(KEEP.map(function(k){return x.r[k.k]||''})).map(q).join(',')}));
+  var blob=new Blob([rows.join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='rubric-library-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)}
+document.addEventListener('click',function(ev){
+  var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a;
+  if(a==='rubSave'){saveRub(false);return}if(a==='rubSkip'){saveRub(true);return}if(a==='rubCancel'){closeRub();return}
+  if(a==='rubEdit'){var t=cur(),f=t&&findF(t,b.dataset.id);if(f)openRub(t,f,'edit');return}
+  if(a==='lib'){VIEW.mode='lib';var sd=$('#side');if(sd)sd.classList.remove('open');render();var m=$('#main');if(m)m.scrollTop=0;return}
+  if(a==='libClose'){VIEW.mode=cur()?'task':'empty';render();return}
+  if(a==='libCsv'){libCsv();return}
+  if(a==='copyRf'){var tt=TASKS[b.dataset.t],ff=tt&&findF(tt,b.dataset.f);if(!ff||!ff.rub)return;var v=b.dataset.k==='raw'?(ff.rub.raw||KEEP.map(function(k){return ff.rub[k.k]?k.l+': '+ff.rub[k.k]:''}).filter(Boolean).join('\n\n')):ff.rub[b.dataset.k];
+    try{navigator.clipboard.writeText(v||'').then(function(){toast('Copied','','ok')},function(){toast('Copy blocked','Select the text and copy it instead.','warn')})}catch(e){toast('Copy blocked','Select the text and copy it instead.','warn')}return}
+});
+document.addEventListener('input',function(ev){if(ev.target.id==='libQ'){VIEW.libQ=ev.target.value;var l=$('#libList');if(l)l.innerHTML=libListHtml()}});
+document.addEventListener('change',function(ev){if(ev.target.id==='libType'){VIEW.libType=ev.target.value;$('#libList').innerHTML=libListHtml()}if(ev.target.id==='libApp'){VIEW.libApp=ev.target.value;$('#libList').innerHTML=libListHtml()}});
 
 /* ---------- backup ---------- */
 function exportData(){var data={app:'AI Trainer Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ai-trainer-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}

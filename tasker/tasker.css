@@ -227,3 +227,28 @@ textarea.in{resize:vertical}
 }
 .tright .seg2{flex:1 1 0!important}.tright .seg2 b{font-size:11.5px}
 .fmthint{font-size:12.5px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:5px 8px}
+
+/* rubric records */
+.rmodal{position:fixed;inset:0;z-index:60;background:rgba(10,12,18,.55);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
+.rsheet{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:min(860px,100%);padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.rgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.rf{display:flex;flex-direction:column;gap:4px;min-width:0}.rf.wide{grid-column:1/-1}
+.rf textarea{resize:vertical;font:inherit}
+.rchecks{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+.rmatch{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:9px;background:var(--warn-soft);color:var(--fg);font-size:13px}
+.rmatch b{color:var(--warn)}.rmatch.conflict{background:var(--crit-soft)}.rmatch.conflict b{color:var(--crit)}
+.rmatch .m,.rubcard .m,.libitem .m{font:500 11.5px var(--mono);color:var(--muted)}
+.hint.ok{color:var(--ok)}
+.rubcard{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:9px;background:var(--raise);font-size:13px}
+.rubline{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}.rubline.warn{color:var(--warn)}.rubline .btn{margin-left:auto}
+.liblist{display:flex;flex-direction:column;gap:8px}
+.libitem{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.libitem summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;list-style:none}
+.libitem summary::-webkit-details-marker{display:none}
+.libitem summary b{flex:1;min-width:200px;overflow-wrap:anywhere}
+.libbody{display:flex;flex-direction:column;gap:10px;margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.libv{white-space:pre-wrap;font-size:13.5px;overflow-wrap:anywhere}
+.lib .card h1{font-family:var(--display,inherit)}
+@media (max-width:640px){.rgrid{grid-template-columns:1fr}}
+.rfoot{position:sticky;bottom:-18px;background:var(--panel);margin:0 -18px -18px;padding:12px 18px;border-top:1px solid var(--line);border-radius:0 0 16px 16px;z-index:1}
+.rchecks{border-top:none;padding-top:0}
