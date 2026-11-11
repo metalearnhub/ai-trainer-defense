@@ -69,7 +69,7 @@ function metrics(t){
   var proj=c.n+Math.min(queue,left/lg)+Math.max(0,left-queue*lg)/(lg+cap);
   return{e:e,c:c,avgCap:avgCap,avgLog:avgLog,cap:cap,lg:lg,left:left,needLog:needLog,needFind:needFind,queue:queue,logBudget:logBudget,target:Math.max(1.5,logBudget),proj:Math.floor(proj),feasible:logBudget>=1.5,pf:planFound(e),pfl:planFloor(e),pl:planLogged(e)}
 }
-function oldestProg(t){var ps=(t.findings||[]).filter(function(x){return x.status==='progress'});ps.sort(function(a,b){return(a.startAt||0)-(b.startAt||0)});return ps[0]||null}
+function oldestProg(t){var ps=(t.findings||[]).filter(function(x){return x.status==='progress'&&!x.block});ps.sort(function(a,b){return(a.startAt||0)-(b.startAt||0)});return ps[0]||null}
 function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitled)'}
 function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function doNow(t){
@@ -154,7 +154,7 @@ function checkGates(){
     GATES.forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
     var c=counts(t),es=elapsed(t);
     if((m>=45||t.huntDone)&&c.n<30){var pr=oldestProg(t),M=metrics(t);
-      if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Finish it or park it and start the next draft.','warn')}}
+      if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done. Stuck? Mark it on the finding: Flow validation or Environment issue.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Can\'t move forward? Mark it as a Flow validation or Environment issue on the finding, or park it and start the next draft.','warn')}}
       else if(c.draft){var idleFrom=Math.max(t.huntDone?(t.huntAt||0):45*60,t.lastAct||0),idle=(es-idleFrom)/60;if(idle>=2&&(!t.nudgeAt||es-t.nudgeAt>=300)){t.nudgeAt=es;changed=true;alertUser(t,'Start the next finding · '+t.app,c.draft+' draft'+(c.draft>1?'s':'')+' waiting and nothing In progress for '+Math.round(idle)+' min. Move one to In progress, run Flow, log it in Feather.','warn')}}
     }
     if(c.n>=30&&c.b>=5&&c.fr>=5&&!t.fired.ready){t.fired.ready=1;changed=true;alertUser(t,'Ready to submit · '+t.app,'30 done with '+c.b+' Bugs and '+c.fr+' FRs. Runtime Quality, final checks, submit in Feather.','ok')}
@@ -177,7 +177,7 @@ if(IDX.cur&&!TASKS[IDX.cur]){IDX.cur=null;VIEW.mode='empty'}
 function render(){
   if(!sessOk()){root.innerHTML=authScreen();var ae=$('#aCode')||$('#aEmail');if(ae&&!ae.value)ae.focus();return}
   var t=cur(),keep={};['main','fscroll','tright'].forEach(function(id){var el=$('#'+id);if(el)keep[id]=el.scrollTop});
-  root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode==='lib'?libHtml():VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
+  root.innerHTML='<div class="app'+(IDX.settings.noside?' noside':'')+'">'+(IDX.settings.noside?'<button class="btn sm sideopen" data-a="collapse" aria-label="Show task list">»</button>':'')+sideHtml()+'<main class="main" id="main">'+(VIEW.mode==='lib'?libHtml():VIEW.mode==='guide'?guideHtml():VIEW.mode!=='new'&&t?taskHtml(t):'<div class="wrap">'+(VIEW.mode==='new'?newHtml():emptyHtml())+'</div>')+'</main></div>';
   $$('.f textarea').forEach(grow);
   Object.keys(keep).forEach(function(id){var el=$('#'+id);if(el)el.scrollTop=keep[id]});
   syncBits();tick();
@@ -188,9 +188,9 @@ function sideHtml(){
   var item=function(t){var c=counts(t);return'<button class="titem" data-a="open" data-id="'+t.id+'" aria-current="'+(t.id===IDX.cur&&VIEW.mode==='task')+'"><b>'+esc(t.app||'Untitled app')+'</b><span>'+hm(elapsed(t))+' · '+c.n+'/30 · '+OUT[t.status][0]+'</span><span>'+day(t.createdAt)+(t.featherId?' · '+t.featherId.slice(0,8):'')+'</span></button>'};
   var notif='Notification' in window?(Notification.permission==='granted'&&IDX.settings.notify?'Desktop reminders on':Notification.permission==='denied'?'Reminders blocked in Chrome':'Turn on desktop reminders'):'Desktop reminders unsupported';
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
-  '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
+  '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><button class="btn ghost" data-a="guide" aria-current="'+(VIEW.mode==='guide')+'" style="width:100%;justify-content:center;margin-bottom:8px">Guide · rules &amp; workflow</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:35, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -201,7 +201,7 @@ function newHtml(){
   '<label for="nApp">App name<input class="in" id="nApp" list="appList" placeholder="e.g. Salesforce clone" required><datalist id="appList">'+Object.keys(apps).map(function(a){return'<option value="'+esc(a)+'">'}).join('')+'</datalist><span class="hint" id="nAppHint">Same name as before lets the app check your past findings for duplicates.</span></label>'+
   '<label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
   '<label for="nTime">Hubstaff time on this task, as it shows right now<input class="in mono" id="nTime" placeholder="0:00:00" style="max-width:160px" inputmode="numeric"><span class="hint">Type it while Hubstaff keeps running: 1:23:45, 1:23 or just 12345. The seconds you take to type are added. Leave empty for 0:00:00.</span></label>'+
-  '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nAdd"> Additional task (partly done by a former expert)</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nLate" data-a="lateToggle"> I already started this task (forgot to log it here)</label>'+'<fieldset class="late" id="lateBox" hidden><legend class="lab">Work done before tracking</legend><p class="hint" style="margin:0">Hubstaff time is required above. These counts are added to your totals; findings you add here are tracked as usual.</p><div class="lgrid"><label for="nPreF">Found so far<input class="in mono" id="nPreF" type="number" min="0" value="0"></label><label for="nPreL">Logged in Feather<input class="in mono" id="nPreL" type="number" min="0" value="0"></label><label for="nPreB">…of those, Bugs<input class="in mono" id="nPreB" type="number" min="0" value="0"></label><label for="nPreR">…of those, FRs<input class="in mono" id="nPreR" type="number" min="0" value="0"></label></div><label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nHunt"> The 45-minute triage window is used up (the clock starts at 0:45 or your Hubstaff time, whichever is later)</label></fieldset>'+
+  '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nAdd"> Additional task (partly done by a former expert)</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nLate" data-a="lateToggle"> I already started this task (forgot to log it here)</label>'+'<fieldset class="late" id="lateBox" hidden><legend class="lab">Work done before tracking</legend><p class="hint" style="margin:0">Hubstaff time is required above (or tick the 45-minute box below). These counts are added to your totals; findings you add here are tracked as usual.</p><div class="lgrid"><label for="nPreF">Found so far<input class="in mono" id="nPreF" type="number" min="0" value="0"></label><label for="nPreL">Logged in Feather<input class="in mono" id="nPreL" type="number" min="0" value="0"></label><label for="nPreB">…of those, Bugs<input class="in mono" id="nPreB" type="number" min="0" value="0"></label><label for="nPreR">…of those, FRs<input class="in mono" id="nPreR" type="number" min="0" value="0"></label></div><label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nHunt"> The 45-minute triage window is used up (the clock starts at 0:45 or your Hubstaff time, whichever is later)</label></fieldset>'+
   '<p class="hint err" id="nErr">'+esc(VIEW.newErr)+'</p><div class="row"><button class="btn pri" type="submit">Start task</button><button class="btn" type="button" data-a="cancelNew">Cancel</button></div></form>';
 }
 function taskHtml(t){
@@ -211,10 +211,10 @@ function taskHtml(t){
     (VIEW.editHead?'<form class="row" id="headForm"><input class="in" id="eApp" value="'+esc(t.app)+'" aria-label="App name" style="max-width:260px"><input class="in mono" id="eUrl" value="'+esc(t.featherUrl||'')+'" placeholder="Feather link" aria-label="Feather link" style="max-width:420px"><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editHead">Cancel</button></form>':
     '<h1>'+esc(t.app||'Untitled app')+'</h1><div class="row">'+(t.featherId?'<span class="fid"><code title="Feather task ID">'+esc(t.featherId)+'</code><button class="btn sm ghost" data-a="copyId">Copy</button></span>':'<span class="muted">No Feather ID</span>')+(t.featherUrl?'<a class="btn sm" href="'+esc(t.featherUrl)+'" target="_blank" rel="noopener">Open in Feather ↗</a>':'')+'<button class="btn sm ghost" data-a="editHead">Edit</button></div>')+
     '</div><div class="row">'+(act?'<button class="btn sm" data-a="end" data-s="submitted"'+(c.n>=30?'':' title="Usually after 30 findings with 5 Bugs and 5 FRs"')+'>Mark submitted</button><button class="btn sm" data-a="end" data-s="mfr">MFR submitted</button><button class="btn sm" data-a="end" data-s="outdated" title="Task went Outdated: submit it right away">Outdated · submitted</button><button class="btn sm danger" data-a="end" data-s="unclaimed">'+(t.additional?'Removed by HDM':'Unclaimed / released')+'</button>'+(elapsed(t)>=120*60&&counts(t).all<10&&!t.mfrRun?'<button class="btn sm" data-a="mfrRun">I ran the MFR workflow</button>':''):t.status==='mfr'?'<button class="btn sm" data-a="end" data-s="active">HDM: keep working</button><button class="btn sm" data-a="end" data-s="released">HDM closed it</button>':'<button class="btn sm" data-a="end" data-s="active">Reopen</button>')+(VIEW.confirmDel===t.id?'<button class="btn sm danger" data-a="delTask">Confirm delete task</button>':'<button class="btn sm ghost danger" data-a="delTask">Delete</button>')+'</div></div>';
-  var tk=[0,45,90,180,240,270];
+  var tk=[0,45,120,255,270];
   var clock='<div class="card"><div class="clockcard"><div><div class="lab">AHT · synced to Hubstaff</div><div class="clock" id="clk">'+hms(e)+'<small> / 4:30:00</small></div><div class="lab" id="left" style="margin-top:6px">'+(e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60))+'</div></div>'+
-    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,90,180,240].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
-    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button>'+(elapsed(t)<45*60&&!t.huntDone?'<button class="btn sm" data-a="huntDone">Exploration done</button>':'')+'<button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,120,255].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
+    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button>'+(elapsed(t)<45*60&&!t.huntDone?'<button class="btn sm" data-a="huntDone">Triage done</button>':'')+'<button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
     (VIEW.sync?'<form class="row" id="syncForm"><label for="syncIn" class="hint">Look at Hubstaff and type its time</label><input class="in mono" id="syncIn" placeholder="1:23:45" inputmode="numeric" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="sync">Cancel</button><span class="hint" style="flex-basis:100%">No need to stop Hubstaff. The seconds you take to type are added automatically.</span></form>':'')+
     '</div></div><div class="counts"><div><b>'+c.all+'</b><span>found</span></div><div><b id="cN">'+c.n+'<small class="muted" style="font-size:14px">/30</small></b><span>logged (Done)</span></div><div><b style="color:var(--bug)">'+c.b+'</b><span>Bugs · min 5</span></div><div><b style="color:var(--fr)">'+c.fr+'</b><span>FRs · min 5</span></div><div><b>'+c.prog+'</b><span>in progress</span></div><div><b>'+c.draft+'</b><span>not started</span></div><div><b>'+(e>=300?(c.n/(e/3600)).toFixed(1):'—')+'</b><span>done / hour</span></div></div></div>';
   var fl=(t.findings||[]).filter(function(f){return VIEW.filter==='all'||f.status===VIEW.filter});
@@ -222,7 +222,7 @@ function taskHtml(t){
     (t.pre||VIEW.editPre?'<div class="prebar">'+(VIEW.editPre?'<form class="row" id="preForm"><span class="lab">Before tracking</span><label class="hint">Found <input class="in mono sm" id="pF" type="number" min="0" value="'+((t.pre||{}).f||0)+'"></label><label class="hint">Logged <input class="in mono sm" id="pL" type="number" min="0" value="'+((t.pre||{}).l||0)+'"></label><label class="hint">Bugs <input class="in mono sm" id="pB" type="number" min="0" value="'+((t.pre||{}).b||0)+'"></label><label class="hint">FRs <input class="in mono sm" id="pR" type="number" min="0" value="'+((t.pre||{}).r||0)+'"></label><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editPre">Cancel</button></form>':'<span class="lab">Before tracking</span><span>'+(t.pre.f||0)+' found · '+(t.pre.l||0)+' logged ('+(t.pre.b||0)+' Bugs, '+(t.pre.r||0)+' FRs) · included in your totals</span><button class="btn sm ghost" data-a="editPre">Edit</button>')+'</div>':'<div class="prebar quiet"><button class="btn sm ghost" data-a="editPre">+ Add findings made before tracking</button></div>')+'<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="'+(VIEW.addType==='fr'?'Page: Capability should …':'Page: Component failure when trigger')+'  (Enter adds a draft)" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
     '<div class="row hint"><span>Circle: not started → in progress (running Flow) → done (logged in Feather). Found counts every finding; logged counts Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
     '<div class="fscroll" id="fscroll">'+(VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div></div>';
-  var gates='<div class="next '+s.tone+'" id="next"><span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
+  var gates='<div class="next '+s.tone+'" id="next"><div class="row"><span class="lab">Rule check</span><span class="sp"></span><button class="btn sm ghost" data-a="guide" data-g="clock" data-tip="Open the guide at the clock-vs-count table.">Guide</button></div><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
   var notes='<div class="card"><div class="row"><span class="lab">Scratch notes</span><span class="sp"></span><span class="saved" data-saved></span></div><textarea class="in notes" id="notes" data-in="notes" placeholder="Workflows to try, things to re-check, real-app comparisons…" aria-label="Scratch notes">'+esc(t.notes||'')+'</textarea></div>';
   var pq=VIEW.pastQ.toLowerCase(),pl=past.filter(function(p){return!pq||String(p.f.text).toLowerCase().indexOf(pq)>=0});
@@ -262,7 +262,7 @@ function fHtml(t,f){
   var d=dupOf(t,f);
   return'<div class="f '+f.status+(d?' dup':'')+'" data-fid="'+f.id+'"><button class="st '+f.status+'" data-a="cycle" data-id="'+f.id+'" aria-label="Status: '+f.status+'. Click to change">'+(f.status==='done'?'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'')+'</button>'+
   '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><div class="fh"><button class="chip '+f.type+'" data-a="ftype" data-id="'+f.id+'">'+(f.type==='bug'?'BUG':f.type==='fr'?'FR':'TYPE?')+'</button><span class="lab">'+(f.status==='draft'?'Not started':f.status==='progress'?'In progress':'Done')+' · found at '+hm(f.at||0)+(f.status==='done'&&f.startAt!=null&&f.doneAt!=null?' · logged in '+mmss(f.doneAt-f.startAt):'')+'</span>'+(f.status==='progress'?'<span class="ftimer" data-ft="'+f.id+'"></span>':'')+'<span class="sp"></span>'+(VIEW.confirmDel===f.id?'<button class="btn sm danger" data-a="delF" data-id="'+f.id+'">Confirm delete</button>':'<button class="btn sm ghost" data-a="delF" data-id="'+f.id+'" aria-label="Delete finding">Delete</button>')+'</div>'+
-  '<textarea data-in="ftext" data-id="'+f.id+'" rows="2" aria-label="Finding notes" placeholder="First line: summary. Then steps, expected vs actual…">'+esc(f.text||'')+'</textarea><div class="fmtbox">'+fmtHint(f)+'</div><div class="dupbox">'+dupHtml(d)+'</div>'+rubCardHtml(t,f)+'</div></div>';
+  '<textarea data-in="ftext" data-id="'+f.id+'" rows="2" aria-label="Finding notes" placeholder="First line: summary. Then steps, expected vs actual…">'+esc(f.text||'')+'</textarea><div class="fmtbox">'+fmtHint(f)+'</div><div class="dupbox">'+dupHtml(d)+'</div>'+stuckHtml(t,f)+rubCardHtml(t,f)+'</div></div>';
 }
 function fmtHint(f){
   var line=String(f.text||'').split('\n')[0].trim();if(line.length<8||f.status==='draft')return'';
@@ -282,10 +282,10 @@ function tick(){
   if(t&&VIEW.mode==='task'){var e=elapsed(t),c=$('#clk'),b=$('#clkBar'),l=$('#left');
     if(c)c.innerHTML=hms(e)+'<small> / 4:30:00</small>';if(b)b.style.width=Math.min(100,e/(AHT*60)*100)+'%';if(l)l.textContent=e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60);
     document.title=hm(e)+' · '+counts(t).n+'/30 · '+(t.app||'Task')+' · AI Trainer Tasker';
-    var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<span class="lab">Rule check</span><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
+    var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<div class="row"><span class="lab">Rule check</span><span class="sp"></span><button class="btn sm ghost" data-a="guide" data-g="clock" data-tip="Open the guide at the clock-vs-count table.">Guide</button></div><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
     var mb=$('#mbar');if(mb)mb.innerHTML=mbarHtml(t);
     if(Math.floor(e)%5===0){var sg=$('#strat');if(sg)sg.innerHTML=stratHtml(t)}
-    var M=null;$$('[data-ft]').forEach(function(el){var f=findF(t,el.dataset.ft);if(!f)return;M=M||metrics(t);var sp=e-(f.startAt||e),tg=M.target*60;el.textContent=mmss(sp)+' / '+mmss(tg);el.className='ftimer'+(sp>tg?' over':'')});
+    var M=null;$$('[data-ft]').forEach(function(el){var f=findF(t,el.dataset.ft);if(!f)return;M=M||metrics(t);var sp=e-(f.startAt||e),tg=M.target*60;el.textContent=mmss(sp)+' / '+mmss(tg);el.className='ftimer'+(sp>tg?' over':'');var sk=document.querySelector('[data-stuck="'+f.id+'"]');if(sk)sk.classList.toggle('over',sp>tg)});
   }else document.title='AI Trainer Tasker';
 }
 setInterval(tick,1000);
@@ -513,6 +513,215 @@ document.addEventListener('click',function(ev){
 });
 document.addEventListener('input',function(ev){if(ev.target.id==='libQ'){VIEW.libQ=ev.target.value;var l=$('#libList');if(l)l.innerHTML=libListHtml()}});
 document.addEventListener('change',function(ev){if(ev.target.id==='libType'){VIEW.libType=ev.target.value;$('#libList').innerHTML=libListHtml()}if(ev.target.id==='libApp'){VIEW.libApp=ev.target.value;$('#libList').innerHTML=libListHtml()}});
+
+/* ---------- in-app guide: rules + exact workflow (read-only, opened from the sidebar) ---------- */
+var GUIDE_SRC='CheckSet Operations & Strategy Handbook (Nov 2026), Nov 9 Office Hours, and your HDM confirmations of Nov 11.';
+function gTable(head,rows){return'<div class="gtable"><table><thead><tr>'+head.map(function(h){return'<th>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+rows.map(function(r){return'<tr>'+r.map(function(c){return'<td>'+c+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table></div>'}
+function gSec(id,title,body){return'<section class="gsec" id="g-'+id+'"><h2>'+title+'</h2>'+body+'</section>'}
+function guideHtml(){
+  var nav=[['glance','At a glance'],['flow','The workflow'],['clock','Clock vs count'],['exits','Exits'],['rubric','Writing the rubric'],['filter','Rank and filter'],['evidence','Real-app FRs and AI'],['queue','Concurrency and queue'],['open','Still to confirm']];
+  return'<div class="wrap guide"><div class="card"><div class="row"><h1 style="margin:0;font-size:22px">Guide · rules and workflow</h1><span class="sp"></span><button class="btn sm ghost" data-a="guideClose">Back</button></div><p class="hint" style="margin:0">Source: '+GUIDE_SRC+' The app\'s alerts and rule checks follow exactly this.</p>'+
+  '<nav class="gnav" aria-label="Guide sections">'+nav.map(function(n){return'<button class="btn sm ghost" data-a="gjump" data-g="'+n[0]+'">'+n[1]+'</button>'}).join('')+'</nav></div>'+
+  gSec('glance','At a glance',gTable(['Rule','Number','What it means'],[
+    ['Standard submission','<b>30+ valid</b>, 5+ Bugs, 5+ FRs','Inside the 4:30 AHT. Runtime Quality and final checks, then submit in Feather'],
+    ['Under 30','10–29','<b>MFR only</b>: the Slack MFR workflow (same as the Minimum Findings Form), with tested areas and limitations'],
+    ['Never','Under 10','Never a standard submission. Always the MFR workflow'],
+    ['Triage window','0:00–0:45','Test freely. Unclaim or release any time if it won\'t boot, is unstable, or clearly can\'t yield 20+ findings'],
+    ['MFR checkpoint','2:00','Under 5 → MFR and release · 5–9 → MFR and follow it · 10+ → keep testing toward 30+'],
+    ['AHT ceiling','4:30','Stop. Under 30 → Slack MFR workflow'],
+    ['Unsure','Any time','Start the MFR workflow first. Zero penalty for starting it']]))+
+  gSec('flow','The workflow, step by step','<ol class="gsteps">'+[
+    ['Claim','One active task. Start Hubstaff, then New task here: paste the Feather link and match the clock to Hubstaff.'],
+    ['0:00–0:45 · Triage','Use the whole 45 minutes. Test the app end to end and capture drafts. <b>Broken</b> (won\'t launch, crashes, unstable): tell your HDM in the POD thread and unclaim in Feather. <b>Low-yield</b> (boots, but clearly can\'t reach 20+ valid findings: too polished, too few workflows): unclaim or release. No rating, scores or do_not_recommend tag.'],
+    ['0:45 · Commit','Window closes. Broken or unusable → release now. Otherwise commit and hunt.'],
+    ['Hunt and log','Each finding: draft → In progress (write the rubric, run Flow, log in Feather) → Done (paste the rubric you filed). About 7 an hour reaches 30 by 4:15.'],
+    ['2:00 · MFR checkpoint','Under 5 → run the Slack MFR workflow, document, release. 5–9 → run it and follow its answer. 10+ → keep going.'],
+    ['Build to 30+','Edge cases, failed attempts, cross-view state, full journeys, real-app comparisons. Keep the Bug/FR mix at 5+ each.'],
+    ['4:15 · Wrap','Stop hunting. Runtime Quality and final checks.'],
+    ['4:30 · Stop','30+ → submit. Under 30 → Slack MFR workflow with tested areas and limitations.']].map(function(s){return'<li><b>'+s[0]+'</b><span>'+s[1]+'</span></li>'}).join('')+'</ol>')+
+  gSec('clock','Clock vs count',gTable(['Hubstaff time','Your count or state','Action','Where'],[
+    ['0:00–0:45','Won\'t boot, crashes, unstable','Tell your HDM, unclaim. No rating or tags','POD thread, Feather'],
+    ['0:00–0:45','Boots but can\'t yield 20+','Unclaim or release','Feather'],
+    ['2:00','Under 5','MFR workflow, document progress, release','Slack'],
+    ['2:00','5–9','MFR workflow, follow its outcome: keep working or submit the MFR','Slack'],
+    ['2:00','10+ and still finding','Keep testing toward 30+','—'],
+    ['Up to 4:30','30+ with 5+ Bugs and 5+ FRs','Runtime Quality, final checks, submit','Feather'],
+    ['4:30','Under 30','Run the MFR workflow: tested areas and limitations','Slack'],
+    ['Any time','Task shows Outdated','Submit it now, no extra review','Feather'],
+    ['Any time','Unsure','Start the MFR workflow first','Slack']])+'<p class="hint">Every MFR includes your finding count, the Bug/FR split, the workflows you tested, and what you tried and why you couldn\'t find more.</p>')+
+  gSec('exits','Exits and special cases',
+    '<h3>Unclaim or release (0:00–0:45)</h3><p>Broken runtime: tell your HDM in the POD thread, then unclaim in Feather. Low-yield runtime: unclaim or release inside the window. Never rate runtime quality, fill scores or add do_not_recommend tags.</p>'+
+    '<h3>MFR workflow (Slack)</h3><ol><li>In #titan-nexus-commercial-team, Start Workflow → <b>Checkset Minimum Findings Request</b>.</li><li>Pick your Findings Count and Total Time Spent.</li><li>Open the Slack Activity tab for the next steps.</li><li><b>Keep working</b>: continue, and run a new request if count or time moves without reaching 30. <b>Submit MFR</b>: keep the task In Progress in Feather; you may start 1 more task while you wait.</li></ol><p class="hint">Use the bot, not channel posts or DMs. An approved MFR only lets the task go to the Review Layer with fewer than 30; it isn\'t acceptance or payment approval.</p>'+
+    '<h3>Normal submission (30+)</h3><p>30+ valid, at least 5 Bugs and 5 FRs. Runtime Quality, final checks, submit in Feather before 4:30.</p>'+
+    '<h3>Outdated</h3><p>If the status changes to Outdated while you work, submit immediately.</p>'+
+    '<h3>Additional tasks</h3><p>Don\'t start from scratch: review existing findings and reviewer feedback, delete the flawed ones, keep the valid ones. You can\'t unclaim these yourself; open a POD ticket asking an HDM to remove it.</p>')+
+  gSec('rubric','Writing the rubric',gTable(['Field','Rule'],[
+    ['Summary','Page or section, then a colon. Bug: <code>Page: Component failure when trigger</code>. FR: <code>Page: Capability should …</code>. No "Bug", "FR" or "P1" prefix'],
+    ['Priority','P0 core task blocked · P1 core support or severe UX · P2 everything else. Rank by impact, never by looks'],
+    ['Issue Type','Bug: implemented but broken. FR: missing compared with the real app. Works as intended: neither'],
+    ['Page or Workflow','<code>Tab -> Group -> Object -> Workflow</code>'],
+    ['Reproduction Steps','Start by opening the app, number 1, 2, 3, plain English. FR: always N/A'],
+    ['Expected Behavior','The [control] on [location] should [action], allowing the user to [outcome]. Always "the user"'],
+    ['Actual Behavior','Four parts: defect, baseline (how a working control behaves), plain why, impact on the user']])+
+    '<p class="hint">Examples: <code>Channels: Create New button opens a blank page when clicked.</code> · <code>Documents: Comment option should allow reviewers to attach feedback to selected items.</code> Never write "I tested", "I verified", "Testing shows" or "As a user, I want".</p>')+
+  gSec('filter','Rank and filter (Unnecessary Issues)','<ul><li><b>External website</b>: broke after leaving the app\'s domain → skip.</li><li><b>Says unavailable</b> (⊘, "Not implemented", "Coming soon") → out, unless P0/P1: then report and justify the impact in Expected and Actual.</li><li><b>Missing prerequisite</b>: disabled until you select, set up or get permission → do the prerequisite and retest.</li><li><b>Known limitation</b>: already in the release notes → skip.</li></ul>')+
+  gSec('evidence','Real-app FRs, evidence and AI use',gTable(['Rule','What to do'],[
+    ['No cap on real-app FRs','Report as many as the comparison supports'],
+    ['Not 100% of findings','Runtime bugs still come from direct testing in the clone'],
+    ['Evidence for every real-app FR','Screenshots labelled Expected Behavior (real app) and Actual Behavior (clone), plus a side-by-side video'],
+    ['Real app paywalled','Ask in your POD thread whether other documentation is allowed'],
+    ['P0/P1 and real-app FRs','Write out the user impact in full'],
+    ['AI allowed','Polishing sentence structure, spelling and formatting'],
+    ['AI never allowed','Generating findings, inventing clone behaviour, faking screenshots or recordings']]))+
+  gSec('queue','Concurrency, queue and PODs','<ul><li>1 active task. A 2nd only while one waits on an MFR or HDM review. New experts: 1 only.</li><li>Finish within 1–2 days. Tasks held 3–4 days can be extracted automatically.</li><li>Primary POD first. Engineering &amp; Data experts may also claim Healthcare; Creative &amp; Design experts may also claim Commercial.</li></ul>')+
+  gSec('open','Still to confirm with your HDM','<p>2:00 with 10+ findings: the handbook says keep testing; the Nov 9 slides suggested an MFR check-in from 1:30 if stalled. Which applies?</p>')+
+  '</div>';
+}
+document.addEventListener('click',function(ev){
+  var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a;
+  if(a==='guide'){VIEW.mode='guide';var sd=$('#side');if(sd)sd.classList.remove('open');render();var m=$('#main');if(m)m.scrollTop=0;if(b.dataset.g){var g=$('#g-'+b.dataset.g);if(g)g.scrollIntoView({block:'start'})}return}
+  if(a==='guideClose'){VIEW.mode=cur()?'task':'empty';render();return}
+  if(a==='gjump'){var s=$('#g-'+b.dataset.g);if(s)s.scrollIntoView({behavior:'smooth',block:'start'});return}
+});
+
+/* ---------- tooltips: hover or focus any control, stage, gate or number ---------- */
+var STAGE_TIP={Triage:'0:00–0:45. Test the whole app freely. Unclaim or release before 0:45 if it won\'t boot, is unstable, or clearly can\'t yield 20+ findings.',Hunt:'0:45–2:00. Find and log. 2:00 checkpoint: under 5 → MFR and release; 5–9 → MFR and follow it.',Build:'2:00–4:15. Build toward 30+ with 5+ Bugs and 5+ FRs. Under 30 only goes in through the MFR.',Wrap:'4:15–4:30. Stop hunting: Runtime Quality, final checks, submit. Under 30 at 4:30 → Slack MFR workflow.'};
+var TIPS=[
+  ['[data-a="new"]','Start tracking a task you just claimed. Paste the Feather link and match the clock to Hubstaff.'],
+  ['[data-a="lib"]','Every rubric you\'ve recorded, searchable by field. New rubrics are checked against all of them for duplicates and conflicts.'],
+  ['.side [data-a="guide"]','The CheckSet rules and the exact task workflow, as the app enforces them.'],
+  ['#tq','Search app names, Feather IDs, finding notes, rubric fields and scratch notes.'],
+  ['.titem','Open this task. Shows AHT used, logged out of 30, and status.'],
+  ['#syncLab','Cloud sync. Tasks and rubrics sync across your signed-in devices.'],
+  ['[data-a="notify"]','Desktop alerts at every gate, even while you work in another tab.'],
+  ['label:has(#snd)','Play a short sound with each alert.'],
+  ['label:has(#tipsOn)','Show these explanations when you hover or focus a control.'],
+  ['[data-a="export"]','Download every task, finding and rubric as a JSON backup.'],
+  ['label[for="imp"]','Restore from a JSON backup. Newer edits win when merging.'],
+  ['[data-a="signout"]','Sign out on this device. Your data stays in the cloud.'],
+  ['[data-a="collapse"]','Hide or show the task list.'],
+  ['.thead .pill','Status of this task in the app. Change it with the buttons on the right.'],
+  ['[data-a="copyId"]','Copy the Feather task ID.'],
+  ['.thead a[target]','Open this task in Feather in a new tab.'],
+  ['[data-a="editHead"]','Edit the app name or Feather link.'],
+  ['[data-s="submitted"]','You submitted in Feather: 30+ valid, 5+ Bugs, 5+ FRs, Runtime Quality and final checks done.'],
+  ['[data-s="mfr"]','You ran the Slack MFR workflow (the Minimum Findings Form) and submitted the MFR. Keep the task In Progress in Feather; you may start 1 more task.'],
+  ['[data-s="outdated"]','The task went Outdated while you worked. Submit it right away, no extra review.'],
+  ['[data-s="unclaimed"]',function(el){return/Removed/.test(el.textContent)?'Additional tasks can\'t be unclaimed by you. Mark this once an HDM removes it through your POD ticket.':'You unclaimed or released it: in the 45-minute window, or after an MFR. No rating, scores or tags.'}],
+  ['[data-a="mfrRun"]','Tell the app you started the MFR workflow at the 2:00 checkpoint, so it stops warning you.'],
+  ['[data-s="active"]',function(el){return/HDM/.test(el.textContent)?'Your HDM answered the MFR with keep working. Back to In progress.':'Move this task back to In progress.'}],
+  ['[data-s="released"]','Your HDM closed or released the task after the MFR.'],
+  ['[data-a="delTask"]','Delete this task from the app on all devices. Feather is not affected.'],
+  ['.mclock','Elapsed AHT, mirrored from Hubstaff. 4:30 is the ceiling.'],
+  ['.seg2',function(el){var n=(el.querySelector('b')||{}).textContent;return STAGE_TIP[n]||''}],
+  ['.mnow .pill','The stage you are in now. Its rule is shown beside it.'],
+  ['.mends','Time left in this stage.'],
+  ['.mcount > div:nth-child(1)','Found: every finding captured (drafts, in progress, done) plus before-tracking found.'],
+  ['.mcount > div:nth-child(2)','Logged: findings marked Done (in Feather). A standard submission needs 30+.'],
+  ['.mcount > div:nth-child(3)','The next gate and how long until its alert.'],
+  ['.mdo','Do now: the single next action, from your pace and the rules.'],
+  ['#next','Rule check: what the rules say to do right now, based on your time and count.'],
+  ['#clk','AHT clock. It runs while Hubstaff runs. Pause it when you stop Hubstaff.'],
+  ['#left','Time left until the 4:30 ceiling.'],
+  ['.clockcard .bar','Progress toward 4:30. Marks at 0:45 (triage closes), 2:00 (MFR checkpoint) and 4:15 (wrap up).'],
+  ['[data-a="run"]','Pause or resume the clock to match Hubstaff.'],
+  ['[data-a="huntDone"]','Triage finished early? Start the Hunt stage now.'],
+  ['[data-a="sync"]','Type the time Hubstaff shows to fix any drift. No need to stop Hubstaff.'],
+  ['[data-a="nudge"]','Adjust the clock by one minute.'],
+  ['.counts > div:nth-child(1)','Found: every finding captured so far, plus before-tracking found.'],
+  ['.counts > div:nth-child(2)','Logged: findings marked Done. A standard submission needs 30+.'],
+  ['.counts > div:nth-child(3)','Logged Bugs. A standard submission needs at least 5.'],
+  ['.counts > div:nth-child(4)','Logged feature requests. A standard submission needs at least 5.'],
+  ['.counts > div:nth-child(5)','Findings you are writing up now (rubric, Flow, Feather).'],
+  ['.counts > div:nth-child(6)','Drafts captured but not started.'],
+  ['.counts > div:nth-child(7)','Logged per hour of AHT. About 7 an hour reaches 30 by 4:15.'],
+  ['.sgrid > div:nth-child(1)','Found vs the 30-by-4:15 plan at this minute. Green when on or ahead.'],
+  ['.sgrid > div:nth-child(2)','Logged vs the plan at this minute. The plan starts logging after 0:30.'],
+  ['.sgrid > div:nth-child(3)','Average time between captures, learned from this task.'],
+  ['.sgrid > div:nth-child(4)','Average time from In progress to Done: rubric, Flow and Feather.'],
+  ['.sgrid > div:nth-child(5)','Time you can spend on each remaining finding and still log 30 by 4:15. Red under 1:30.'],
+  ['.sgrid > div:nth-child(6)','Where you land by 4:15 at your current pace.'],
+  ['.gate',function(el){var t=(el.querySelector('.t')||{}).textContent,l=(el.querySelectorAll('span')[1]||{}).textContent;return'Gate '+t+': '+l+'. You get a desktop alert here.'}],
+  ['#notes','Private scratch notes for this task. Synced.'],
+  ['#pastQ','Search findings from your earlier tasks on this same app.'],
+  ['.pf','A finding from an earlier task on this app. Drafts that match get an amber flag.'],
+  ['[data-a="filter"]',function(el){var f=el.dataset.f;return{all:'Show everything, grouped: In progress, Not started, then Done.',draft:'Drafts captured but not started.',progress:'Findings being written up now.',done:'Findings logged in Feather.'}[f]}],
+  ['[data-a="addType"][data-t="bug"]','New drafts are Bugs: implemented but broken.'],
+  ['[data-a="addType"][data-t="fr"]','New drafts are feature requests: missing compared with the real app.'],
+  ['[data-a="addType"][data-t="unk"]','Not sure yet. Click the type chip on the finding later to decide.'],
+  ['#addIn','Type what you see and press Enter to save a draft. Summary format: Page: Component failure (Bug) or Page: Capability should … (FR).'],
+  ['.prebar [data-a="editPre"]','Counts from work done before you started tracking here. Included in your totals.'],
+  ['label:has(#pF)','Findings you found before tracking, logged or not.'],
+  ['label:has(#pL)','Of those, how many are already logged in Feather.'],
+  ['label:has(#pB)','Of the logged ones, how many are Bugs.'],
+  ['label:has(#pR)','Of the logged ones, how many are feature requests.'],
+  ['.st[data-a="cycle"]',function(el){return el.classList.contains('draft')?'Not started. Click to start writing it up (In progress).':el.classList.contains('progress')?'In progress. Click when it\'s logged in Feather; you\'ll paste the rubric you filed.':'Done. Click to move it back to Not started.'}],
+  ['.chip[data-a="ftype"]','Click to switch: Bug → FR → unsure.'],
+  ['.ftimer','Time on this finding vs your per-finding budget.'],
+  ['[data-a="block"][data-k="flow"]','Flow is rejecting or not validating this finding. Pauses its budget alerts and shows what to do.'],
+  ['[data-a="block"][data-k="env"]','The clone is blocking reproduction: crash, error, screen won\'t load. Pauses its budget alerts and shows what to do.'],
+  ['[data-a="unblock"]','The blocker is gone. Continue writing this finding up.'],
+  ['[data-a="parkF"]','Move it back to Not started so you can work on the next draft.'],
+  ['.duphint','Looks like an earlier finding. Check before you file it to avoid a duplicate.'],
+  ['.fmthint','Summary format check: page name, a colon, then the failure or the "should".'],
+  ['[data-a="rubEdit"]','View or edit the rubric recorded for this finding.'],
+  ['.donebar','Show or hide findings already logged.'],
+  ['[data-a="delF"]','Delete this finding on all devices.'],
+  ['#rubRaw','Paste the whole rubric. Labels like Summary:, Priority: and Issue Type: are split into the fields below.'],
+  ['#rubChecks','Compared with every recorded rubric. Duplicate: the same issue again. Conflict: the same issue with a different type or priority.'],
+  ['label:has([data-rf="summary"])','Page or section, a colon, then the failure (Bug) or what it should do (FR). No Bug/FR/P1 prefix.'],
+  ['label:has([data-rf="prio"])','P0 core task blocked · P1 core support or severe UX · P2 everything else.'],
+  ['label:has([data-rf="type"])','Bug: implemented but broken. Feature request: missing compared with the real app. FR sets steps to N/A.'],
+  ['label:has([data-rf="path"])','Tab -> Group -> Object -> Workflow.'],
+  ['label:has([data-rf="steps"])','Start by opening the app, numbered 1, 2, 3. Feature requests are always N/A.'],
+  ['label:has([data-rf="expected"])','The [control] on [location] should [action], allowing the user to [outcome].'],
+  ['label:has([data-rf="actual"])','Defect, baseline, plain why, impact on the user. Never "I tested".'],
+  ['[data-a="rubSave"]','Save the rubric to this finding\'s history and mark it Done. Ctrl+Enter.'],
+  ['[data-a="rubSkip"]','Mark Done now and add the rubric later from the finding.'],
+  ['.rsheet [data-a="rubCancel"]','Close without saving. The finding stays In progress.'],
+  ['#libQ','Search every recorded field: summary, page, steps, expected and actual.'],
+  ['#libType','Show only Bugs or only feature requests.'],
+  ['#libApp','Show rubrics from one app.'],
+  ['[data-a="libCsv"]','Download all recorded rubrics as a spreadsheet.'],
+  ['[data-a="copyRf"]',function(el){return el.dataset.k==='raw'?'Copy everything you pasted for this rubric.':'Copy this field.'}],
+  ['label[for="nApp"]','Use the same name every time you claim this app, so past findings are checked for duplicates.'],
+  ['label[for="nUrl"]','The task ID after /tasks/ is pulled out and checked against tasks you already logged.'],
+  ['label[for="nTime"]','The time Hubstaff shows for this task right now. Typing time is added for you.'],
+  ['label:has(#nRun)','Leave on if Hubstaff is running, so the clock runs too.'],
+  ['label:has(#nAdd)','From the Additional Tasks queue: review existing findings first; only an HDM can remove it.'],
+  ['label:has(#nLate)','You worked on it before opening it here. Enter the Hubstaff time and what you already found.'],
+  ['label:has(#nHunt)','The 45-minute triage window is behind you. The clock starts at 0:45 or your Hubstaff time, whichever is later.'],
+  ['label[for="nPreF"]','Findings you found before tracking, logged or not.'],
+  ['label[for="nPreL"]','Of those, how many are already logged in Feather.']
+];
+var tipEl=null,tipTimer=null,tipFor=null,tipBusy=false;
+function applyTips(){if(tipBusy)return;tipBusy=true;try{TIPS.forEach(function(x){var els;try{els=document.querySelectorAll(x[0])}catch(e){return}els.forEach(function(el){var v=typeof x[1]==='function'?x[1](el):x[1];if(v&&el.getAttribute('data-tip')!==v){el.setAttribute('data-tip',v);if(el.hasAttribute('title'))el.removeAttribute('title')}})})}finally{tipBusy=false}}
+function tipsOn(){return!IDX.settings.noTips}
+var tipXY=null;document.addEventListener('mousemove',function(ev){tipXY=[ev.clientX,ev.clientY]},{passive:true});
+function showTip(el){if(!tipsOn())return;if(!el.isConnected){if(!tipXY)return;var u=document.elementFromPoint(tipXY[0],tipXY[1]);el=u&&u.closest('[data-tip]');if(!el)return}var v=el.getAttribute('data-tip');if(!v)return;if(!tipEl){tipEl=document.createElement('div');tipEl.id='tipbox';tipEl.className='tipbox';tipEl.setAttribute('role','tooltip');document.body.appendChild(tipEl)}
+  tipEl.textContent=v;tipEl.style.left='0px';tipEl.style.top='0px';tipEl.classList.add('on');var r=el.getBoundingClientRect(),w=tipEl.offsetWidth,h=tipEl.offsetHeight,vw=window.innerWidth,vh=window.innerHeight;
+  var x=Math.max(8,Math.min(vw-w-8,r.left+r.width/2-w/2)),y=r.bottom+8;if(y+h>vh-8)y=Math.max(8,r.top-h-8);tipEl.style.left=x+'px';tipEl.style.top=y+'px';tipFor=el}
+function hideTip(){clearTimeout(tipTimer);tipFor=null;if(tipEl)tipEl.classList.remove('on')}
+document.addEventListener('mouseover',function(ev){var el=ev.target.closest&&ev.target.closest('[data-tip]');if(el===tipFor)return;clearTimeout(tipTimer);if(!el){hideTip();return}tipTimer=setTimeout(function(){showTip(el)},350)});
+document.addEventListener('focusin',function(ev){var el=ev.target.closest&&ev.target.closest('[data-tip]');if(el&&ev.target.matches(':focus-visible'))showTip(el)});
+document.addEventListener('focusout',hideTip);document.addEventListener('scroll',function(){tipFor=null;if(tipEl)tipEl.classList.remove('on')},true);document.addEventListener('mousedown',hideTip);document.addEventListener('keydown',function(ev){if(ev.key==='Escape')hideTip()});
+var tipObs=new MutationObserver(function(){clearTimeout(applyTips.t);applyTips.t=setTimeout(applyTips,40)});tipObs.observe(document.body,{childList:true,subtree:true});
+document.addEventListener('change',function(ev){if(ev.target.id==='tipsOn'){IDX.settings.noTips=!ev.target.checked;saveIdx();if(!ev.target.checked)hideTip()}});
+
+/* ---------- stuck on a finding: Flow validation vs Environment ---------- */
+var STUCK={flow:{l:'Flow validation issue',g:'Flow is rejecting or not validating this finding. Re-check the summary format (Page: …), required fields, and N/A steps for FRs, then retry once. Still failing? Park it, start the next draft, and tell your HDM in the POD thread if it keeps happening.'},
+  env:{l:'Environment issue',g:'The clone is blocking reproduction (crash, error, screen won\'t load). Reload and retry once. Still broken? Capture what you see, park this one and test another workflow. If the whole app is down, tell your HDM in the POD thread and note it as a limitation for the MFR.'}};
+function stuckHtml(t,f){
+  if(f.status!=='progress')return'';
+  if(f.block){var S=STUCK[f.block.k];return'<div class="stuck on '+f.block.k+'"><b>Blocked · '+S.l+'</b><span>'+esc(S.g)+'</span><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-a="unblock" data-id="'+f.id+'">Resolved, continue</button><button class="btn sm" data-a="parkF" data-id="'+f.id+'">Park it (back to Not started)</button><button class="btn sm ghost" data-a="block" data-k="'+(f.block.k==='flow'?'env':'flow')+'" data-id="'+f.id+'">It\'s actually '+(f.block.k==='flow'?'the environment':'Flow validation')+'</button></div></div>'}
+  return'<div class="stuck" data-stuck="'+f.id+'"><span>Stuck?</span><button class="btn sm ghost" data-a="block" data-k="flow" data-id="'+f.id+'">Flow validation issue</button><button class="btn sm ghost" data-a="block" data-k="env" data-id="'+f.id+'">Environment issue</button></div>';
+}
+document.addEventListener('click',function(ev){
+  var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a,t=cur();if(!t)return;
+  if(a==='block'){var f=findF(t,b.dataset.id);if(!f)return;var at=elapsed(t);f.block={k:b.dataset.k,at:at};(f.blocks=f.blocks||[]).push({k:b.dataset.k,at:at});f.u=Date.now();saveTask(t);render();toast('Marked · '+STUCK[b.dataset.k].l,'Budget alerts for this finding are paused. Follow the steps on the finding.','warn');return}
+  if(a==='unblock'){var g=findF(t,b.dataset.id);if(!g)return;delete g.block;g.w1=1;g.w2=1;g.u=Date.now();saveTask(t);render();toast('Back on it','','ok');return}
+  if(a==='parkF'){var h=findF(t,b.dataset.id);if(!h)return;delete h.block;h.status='draft';delete h.startAt;delete h.doneAt;h.parked=(h.parked||0)+1;h.u=Date.now();t.lastAct=elapsed(t);saveTask(t);render();toast('Parked','Back in Not started. Start the next draft.','ok');return}
+});
 
 /* ---------- backup ---------- */
 function exportData(){var data={app:'AI Trainer Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ai-trainer-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}
