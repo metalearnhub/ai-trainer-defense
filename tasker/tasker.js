@@ -532,7 +532,7 @@ function flowChart(){
   '<g fill="none" stroke="'+E+'" stroke-width="1.25"><path d="M250 136V162" marker-end="url(#fc-arrow)"/><path d="M360 196H430" marker-end="url(#fc-arrow)"/><path d="M250 230V266" marker-end="url(#fc-arrow)"/><path d="M360 300H430" marker-end="url(#fc-arrow)"/><path d="M250 334V370" marker-end="url(#fc-arrow)"/><path d="M250 426V452" marker-end="url(#fc-arrow)"/><path d="M360 486H430" marker-end="url(#fc-arrow)"/><path d="M250 520V546" marker-end="url(#fc-arrow)"/><path d="M360 590H430" marker-end="url(#fc-arrow)"/><path d="M250 634V660" marker-end="url(#fc-arrow)"/><path d="M360 694H430" marker-end="url(#fc-arrow)"/><path d="M140 694H60V398H120" marker-end="url(#fc-arrow)"/></g>'+
   box(250,80,260,56)+tx(250,104,'Claim the task',{w:600})+tx(250,122,'One task · test freely for 45 min',{s:11.5,c:Q})+
   dia(250,196,110,34)+tx(250,200,'20+ possible by 0:45?')+
-  box(575,168,290,56,B)+tx(575,192,'Unclaim any time before 0:45',{w:600})+tx(575,210,'Unstable, broken, or can\'t reach 20+',{s:11.5})+
+  box(575,168,290,56,B)+tx(575,192,'Unclaim any time before 0:45',{w:600})+tx(575,210,'Unstable, broken, or low-yield runtime',{s:11.5})+
   dia(250,300,110,34)+tx(250,304,'Usable?')+
   box(575,272,290,56,B)+tx(575,296,'Release the task',{w:600})+tx(575,314,'Environment broken or unusable',{s:11.5})+
   box(250,370,260,56)+tx(250,394,'Test and file findings',{w:600})+tx(250,412,'Aim for 30+ · under 30 goes via the MFR',{s:11.5,c:Q})+
