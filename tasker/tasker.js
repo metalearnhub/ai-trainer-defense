@@ -389,8 +389,8 @@ var RF=[
   {k:'video',l:'Video Evidence',re:/^(video( evidence| link)?|evidence|recording|screen recording|loom)$/}
 ];
 var RFK={};RF.forEach(function(x){RFK[x.k]=x});
-var FORMK=['summary','prio','type','path','steps','expected','actual','video'];/* Priority Justification is parsed only so it doesn't spill into Actual; not kept */
-var KEEP=RF.filter(function(x){return x.k!=='why'});
+var FORMK=['summary','prio','type','path','steps','expected','actual'];/* Priority Justification is parsed only so it doesn't spill into Actual; not kept */
+var KEEP=RF.filter(function(x){return x.k!=='why'&&x.k!=='video'});/* video is parsed so a pasted link doesn't spill into Actual; not kept */
 function rfFor(label){var n=String(label||'').toLowerCase().replace(/[^a-z ]+/g,' ').replace(/\s+/g,' ').trim();if(!n||n.length>45)return null;for(var i=0;i<RF.length;i++)if(RF[i].re.test(n))return RF[i];return null}
 function normType(v){v=String(v||'').toLowerCase();return/feature|\bfr\b|request/.test(v)?'fr':/bug|defect/.test(v)?'bug':''}
 function normPrio(v){var m=String(v||'').toUpperCase().match(/P\s?([0-2])/);return m?'P'+m[1]:''}
