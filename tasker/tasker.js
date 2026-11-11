@@ -342,7 +342,10 @@ document.addEventListener('change',function(ev){if(ev.target.id==='imp'&&ev.targ
 document.addEventListener('submit',function(ev){
   var f=ev.target;ev.preventDefault();var t=cur();
   if(f.id==='authForm'){authSubmit(false);return}
-  if(f.id==='preForm'&&t){var nv=function(id){return Math.max(0,parseInt($(id).value,10)||0)};t.pre={f:nv('#pF'),l:nv('#pL'),b:nv('#pB'),r:nv('#pR')};if(t.pre.l>t.pre.f)t.pre.f=t.pre.l;VIEW.editPre=false;saveTask(t);render();return}
+  if(f.id==='preForm'&&t){var nv=function(id){return Math.max(0,parseInt($(id).value,10)||0)};var old=t.pre||{},np={f:nv('#pF'),l:nv('#pL'),b:nv('#pB'),r:nv('#pR')},note=[];
+    if(np.l>np.f){if(np.f<(+old.f||0)||np.l===(+old.l||0)){np.l=np.f;note.push('Logged lowered to '+np.f+' to match Found.')}else{np.f=np.l;note.push('Found raised to '+np.l+' to match Logged.')}}
+    if(np.b+np.r>np.l){var over=np.b+np.r-np.l,cut=Math.min(np.r,over);np.r-=cut;np.b-=Math.min(np.b,over-cut);note.push('Bugs and FRs trimmed to fit '+np.l+' logged.')}
+    if(!np.f&&!np.l&&!np.b&&!np.r)delete t.pre;else t.pre=np;VIEW.editPre=false;saveTask(t);render();toast('Before-tracking counts saved',note.join(' ')||(t.pre?t.pre.f+' found · '+t.pre.l+' logged':'Cleared.'),'ok');return}
   if(f.id==='newForm'){
     var app=$('#nApp').value.trim(),url=$('#nUrl').value.trim(),fid=parseFeather(url),sec=$('#nTime').value.trim()?parseTime($('#nTime').value):0;if(sec!=null&&$('#nRun').checked&&VIEW.syncT0)sec+=(Date.now()-VIEW.syncT0)/1000;VIEW.syncT0=null;
     if(!app){VIEW.newErr='Enter the app name.';$('#nErr').textContent=VIEW.newErr;return}
