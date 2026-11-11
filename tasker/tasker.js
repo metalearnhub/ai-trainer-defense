@@ -50,7 +50,7 @@ var MFR_DOC='Include: finding count, Bug/FR split, workflows tested, what you tr
 /* CheckSet Operations & Strategy Handbook (Nov 2026): standard = 30+ inside AHT; anything under 30 goes through the Slack MFR workflow (the Minimum Findings Form); minimum 10.
    Checkpoints: triage window 0:00–0:45 (test freely, unclaim/release any time) · MFR 2:00 · AHT 4:30. */
 var STAGES=[
-  {id:'explore',a:0,b:45,n:'Triage',d:'Use the full 45 minutes: test the whole app freely and capture drafts. Unclaim or release before 0:45 if it won\'t boot, crashes or is unstable, or if it boots but clearly can\'t yield 20+ findings (too polished, too few workflows). No rating or tags.'},
+  {id:'explore',a:0,b:45,n:'Triage',d:'Use the full 45 minutes: test the whole app freely and capture drafts. Unclaim or release before 0:45 if it won\'t boot, crashes or is unstable, or if it boots but clearly can\'t yield 20+ findings: a low-yield runtime (high-fidelity clone with low defect density, or limited workflow coverage). No rating or tags.'},
   {id:'hunt',a:45,b:120,n:'Hunt',d:'Find and log. 2:00 checkpoint: under 5 → MFR and release; 5–9 → MFR and follow it.'},
   {id:'build',a:120,b:255,n:'Build',d:'Build toward 30+. Under 30 only goes in through the MFR workflow.'},
   {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: under 30 → Slack MFR workflow.'}
@@ -95,7 +95,7 @@ function nextStep(t){
   if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
   if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Boots but clearly can\'t yield 20+ findings (too polished, too few workflows) → unclaim/release too. Before 0:45, no rating or tags.'};
+  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Low-yield runtime (boots, but high-fidelity clone with low defect density or limited workflow coverage, so it clearly can\'t yield 20+ findings) → unclaim/release too. Before 0:45, no rating or tags.'};
   var pf=planFound(e),pfl=planFloor(e);
   if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
   if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
@@ -113,7 +113,7 @@ var GATES=[
 ];
 function gateMessage(t,g){
   var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
-  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Unstable or broken, or can you see it won\'t yield 20+ findings (too polished, too few workflows)? Unclaim before 0:45. No rating or tags.'+tail;
+  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Unstable or broken, or is it a low-yield runtime that won\'t yield 20+ findings (high-fidelity clone, low defect density, limited workflow coverage)? Unclaim before 0:45. No rating or tags.'+tail;
   if(g.id==='g45')return'0:45: triage window closes. Broken, unstable or clearly short of 20+? Release now. Otherwise commit and keep going toward 30+.'+tail;
   if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
   if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 30+.'+tail;
@@ -559,7 +559,7 @@ function guideHtml(){
   gSec('chart','Workflow chart','<div class="fcwrap">'+flowChart()+'</div><p class="hint">Follow the arrows from the top. Until you reach 30+ or 4:30, you loop back to testing.</p>')+
   gSec('flow','The workflow, step by step','<ol class="gsteps">'+[
     ['Claim','One active task. Start Hubstaff, then New task here: paste the Feather link and match the clock to Hubstaff.'],
-    ['0:00–0:45 · Triage','Use the whole 45 minutes. Test the app end to end and capture drafts. <b>Broken</b> (won\'t launch, crashes, unstable): tell your HDM in the POD thread and unclaim in Feather. <b>Low-yield</b> (boots, but clearly can\'t reach 20+ valid findings: too polished, too few workflows): unclaim or release. No rating, scores or do_not_recommend tag.'],
+    ['0:00–0:45 · Triage','Use the whole 45 minutes. Test the app end to end and capture drafts. <b>Broken</b> (won\'t launch, crashes, unstable): tell your HDM in the POD thread and unclaim in Feather. <b>Low-yield runtime</b> (boots, but clearly can\'t reach 20+ valid findings: a high-fidelity clone with low defect density, or limited workflow coverage): unclaim or release. No rating, scores or do_not_recommend tag.'],
     ['0:45 · Commit','Window closes. Broken or unusable → release now. Otherwise commit and hunt.'],
     ['Hunt and log','Each finding: draft → In progress (write the rubric, run Flow, log in Feather) → Done (paste the rubric you filed). About 7 an hour reaches 30 by 4:15.'],
     ['2:00 · MFR checkpoint','Under 5 → run the Slack MFR workflow, document, release. 5–9 → run it and follow its answer. 10+ → keep going.'],
@@ -568,7 +568,7 @@ function guideHtml(){
     ['4:30 · Stop','30+ → submit. Under 30 → Slack MFR workflow with tested areas and limitations.']].map(function(s){return'<li><b>'+s[0]+'</b><span>'+s[1]+'</span></li>'}).join('')+'</ol>')+
   gSec('clock','Clock vs count',gTable(['Hubstaff time','Your count or state','Action','Where'],[
     ['0:00–0:45','Won\'t boot, crashes, unstable','Tell your HDM, unclaim. No rating or tags','POD thread, Feather'],
-    ['0:00–0:45','Boots but can\'t yield 20+','Unclaim or release','Feather'],
+    ['0:00–0:45','Low-yield runtime: high-fidelity clone, low defect density or limited workflow coverage; can\'t yield 20+','Unclaim or release','Feather'],
     ['2:00','Under 5','MFR workflow, document progress, release','Slack'],
     ['2:00','5–9','MFR workflow, follow its outcome: keep working or submit the MFR','Slack'],
     ['2:00','10+ and still finding','Keep testing toward 30+','—'],
@@ -579,7 +579,7 @@ function guideHtml(){
     ['Any time','Task shows Outdated','Submit it now, no extra review','Feather'],
     ['Any time','Unsure','Start the MFR workflow first','Slack']])+'<p class="hint">Every MFR includes your finding count, the Bug/FR split, the workflows you tested, and what you tried and why you couldn\'t find more.</p>')+
   gSec('exits','Exits and special cases',
-    '<h3>Unclaim or release (0:00–0:45)</h3><p>Broken runtime: tell your HDM in the POD thread, then unclaim in Feather. Low-yield runtime: unclaim or release inside the window. Never rate runtime quality, fill scores or add do_not_recommend tags.</p>'+
+    '<h3>Unclaim or release (0:00–0:45)</h3><p>Broken runtime: tell your HDM in the POD thread, then unclaim in Feather. Low-yield runtime (high-fidelity clone with low defect density, or limited workflow coverage): unclaim or release inside the window. Never rate runtime quality, fill scores or add do_not_recommend tags.</p>'+
     '<h3>MFR workflow (Slack)</h3><ol><li>In #titan-nexus-commercial-team, Start Workflow → <b>Checkset Minimum Findings Request</b>.</li><li><b>MFR eligibility</b>: pick your findings bucket: Under 5 · 5–14 · 15–19 · 20–29 · 30+ (Bug/FR mismatch only, when you have 30 but not 5 Bugs and 5 FRs).</li><li>The MFR bot messages you. Follow its questions until you qualify; the outcome is Keep working or Submit MFR.</li><li><b>Keep working</b>: continue, and run a new request if count or time moves without reaching 30.</li><li><b>Submit MFR</b>: you get "MFR submitted — awaiting review". Keep the task In Progress in Feather. You may claim ONE new task from a different app. Reviews usually take under 12 hours; no reply after 12 hours → contact your pod leads.</li><li><b>Approved</b> (by your HDM, or automatically by FLOW-AI Approval, sometimes within a minute): "You may submit the task as-is with N of 30". Submit it in Feather. In this app, click Approved · submitted as-is.</li></ol><p class="hint">Use the bot, not channel posts or DMs. Approval only permits early submission; reviewers still decide whether each finding is valid. Once approved, you never need a second MFR for that task.</p>'+
     '<h3>Normal submission (30+)</h3><p>30+ valid, at least 5 Bugs and 5 FRs. Runtime Quality, final checks, submit in Feather before 4:30.</p>'+
     '<h3>Outdated</h3><p>If the status changes to Outdated while you work, submit immediately.</p>'+
