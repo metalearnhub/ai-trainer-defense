@@ -45,16 +45,16 @@ function planFound(m){return Math.min(30,30*m/255)}
 function planFloor(m){return Math.min(20,20*m/255)}
 function planLogged(m){return m<=30?0:Math.min(30,30*(m-30)/225)}
 function lastActAgoMin(t){var e=elapsed(t),xs=[];(t.findings||[]).forEach(function(x){xs.push(x.at||0);if(x.doneAt!=null)xs.push(x.doneAt)});if(!xs.length)return e/60;return(e-Math.max.apply(null,xs))/60}
-var OUT={active:['In progress','info'],mfr:['MFR · awaiting HDM','warn'],submitted:['Submitted','ok'],form:['Minimum Findings Form sent','warn'],outdated:['Outdated · submitted','warn'],unclaimed:['Unclaimed','crit'],released:['Released','warn']};
+var OUT={active:['In progress','info'],mfr:['MFR · awaiting HDM','warn'],submitted:['Submitted','ok'],form:['MFR submitted','warn'],outdated:['Outdated · submitted','warn'],unclaimed:['Unclaimed','crit'],released:['Released','warn']};
 var MFR_DOC='Include: finding count, Bug/FR split, workflows tested, what you tried and why you couldn\'t find more.';
-/* CheckSet Operations & Strategy Handbook (Nov 2026): target 30, acceptable 20–25, minimum 10.
+/* CheckSet Operations & Strategy Handbook (Nov 2026): standard = 30+ inside AHT; anything under 30 goes through the Slack MFR workflow (the Minimum Findings Form); minimum 10.
    Checkpoints: boot 0:15 · viability 0:45 · MFR 2:00 · AHT 4:30. */
 var STAGES=[
   {id:'boot',a:0,b:15,n:'Boot',d:'Does it load and boot? If not, unclaim directly. No rating or tags.'},
   {id:'explore',a:15,b:45,n:'Explore',d:'Map the main workflows and capture drafts. Broken or unusable at 0:45 → release.'},
   {id:'hunt',a:45,b:120,n:'Hunt',d:'Find and log. 2:00 checkpoint: under 5 → MFR and release; 5–9 → MFR and follow it.'},
-  {id:'build',a:120,b:255,n:'Build',d:'Build toward 30. 20–25 is acceptable when the environment is limited.'},
-  {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: 10–29 → Minimum Findings Form.'}
+  {id:'build',a:120,b:255,n:'Build',d:'Build toward 30+. Under 30 only goes in through the MFR workflow.'},
+  {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: under 30 → Slack MFR workflow.'}
 ];
 function stageFor(t,m){return t&&t.huntDone&&m<45?STAGES[2]:stageOf(m)}
 function stageOf(m){for(var i=0;i<STAGES.length;i++)if(m<STAGES[i].b)return STAGES[i];return STAGES[STAGES.length-1]}
@@ -86,23 +86,23 @@ function doNow(t){
 function nextStep(t){
   var e=elapsed(t)/60,c=counts(t),n=c.n,F=c.all,ok=n>=30&&c.b>=5&&c.fr>=5;
   if(t.status==='submitted')return{tone:'ok',h:'Submitted',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings.'};
-  if(t.status==='form')return{tone:'warn',h:'Minimum Findings Form sent',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings, tested areas and limitations documented.'};
+  if(t.status==='form')return{tone:'warn',h:'MFR submitted',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings, tested areas and limitations documented.'};
   if(t.status==='outdated')return{tone:'warn',h:'Outdated · submitted',p:'Submitted as soon as it went Outdated, as the handbook asks.'};
   if(t.status==='unclaimed')return{tone:'crit',h:'Unclaimed',p:'Released in Feather. No rating, scores or tags needed.'};
   if(t.status==='released')return{tone:'warn',h:'Released',p:'Closed after the MFR or HDM review.'};
   if(t.status==='mfr')return{tone:'warn',h:'MFR submitted · awaiting HDM',p:'Keep this task In Progress in Feather. You may start 1 more task while you wait. An approved MFR sends the task to the Review Layer; you never need a second one.'};
   if(ok)return{tone:'ok',h:'Ready to submit',p:'Complete the Runtime Quality assessment, run final checks, then submit in Feather.'};
-  if(e>=AHT)return F>=10?{tone:'crit',h:'4:30 · stop and use the Minimum Findings Form',p:'You have '+F+' found ('+n+' logged). Submit through the Minimum Findings Form with the areas you tested and the environment\'s limitations.'}:{tone:'crit',h:'4:30 · under 10: start the MFR workflow',p:'Never a standard submission under 10. Start the MFR workflow in Slack. '+MFR_DOC};
+  if(e>=AHT)return F>=10?{tone:'crit',h:'4:30 · stop and run the MFR workflow',p:'You have '+F+' found ('+n+' logged). Run the Slack MFR workflow (Minimum Findings Form) with the areas you tested and the environment\'s limitations.'}:{tone:'crit',h:'4:30 · under 10: start the MFR workflow',p:'Never a standard submission under 10. Start the MFR workflow in Slack. '+MFR_DOC};
   if(n>=30)return{tone:'warn',h:'30 logged but the mix is short',p:'You need '+(c.b<5?(5-c.b)+' more Bug'+(5-c.b>1?'s':''):'')+(c.b<5&&c.fr<5?' and ':'')+(c.fr<5?(5-c.fr)+' more FR'+(5-c.fr>1?'s':''):'')+'. If you can\'t find them, start the MFR workflow.'};
-  if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the Minimum Findings Form: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
+  if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
   if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
   if(e<15&&!t.huntDone)return{tone:'info',h:'Boot check · '+mmss((15-e)*60)+' left',p:'Won\'t load, won\'t boot or can\'t be tested? Unclaim directly in Feather. No rating, scores or tags.'};
   if(e<45&&!t.huntDone)return{tone:'info',h:'Viability check at 0:45 · '+mmss((45-e)*60)+' left',p:'If the environment is broken or unusable by 0:45, release the task. Otherwise keep exploring.'};
   var pf=planFound(e),pfl=planFloor(e);
-  if(F>=pf-1)return{tone:'ok',h:'On pace for 30',p:'Found '+F+' (target pace '+Math.round(pf)+', floor '+Math.round(pfl)+') · logged '+n+'.'};
-  if(F>=pfl-1)return{tone:'ok',h:'Above the 20 floor',p:'Found '+F+' (target pace '+Math.round(pf)+', floor '+Math.round(pfl)+'). 20–25 is acceptable when the environment is limited.'};
-  return{tone:'warn',h:'Below the 20 floor by '+Math.round(pfl-F),p:'Found '+F+', floor '+Math.round(pfl)+' at '+hm(e*60)+'. Switch workflows, or start the MFR workflow if the app has run out. There is no penalty for starting it.'};
+  if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
+  if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
+  return{tone:'warn',h:'Well behind 30 pace ('+F+' vs '+Math.round(pf)+')',p:'Switch workflows, or start the Slack MFR workflow if the app has run out. There is no penalty for starting it.'};
 }
 var GATES=[
   {id:'g15',m:15,t:'0:15',l:'Boot check · won\'t load → unclaim'},
@@ -112,7 +112,7 @@ var GATES=[
   {id:'g240',m:240,t:'4:00',l:'30 min left · check the mix'},
   {id:'g255',m:255,t:'4:15',l:'Wrap up · Runtime Quality'},
   {id:'g265',m:265,t:'4:25',l:'5 min to 4:30'},
-  {id:'g270',m:270,t:'4:30',l:'Stop · 10–29 → Minimum Findings Form'}
+  {id:'g270',m:270,t:'4:30',l:'Stop · under 30 → MFR workflow'}
 ];
 function gateMessage(t,g){
   var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
@@ -121,9 +121,9 @@ function gateMessage(t,g){
   if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
   if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 20–30.'+tail;
   if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Aim for 20+; log what you have and check the Bug/FR mix.')+tail;
-  if(g.id==='g255')return(n>=30?'Stop hunting. Runtime Quality, final checks, submit.':n>=10?'Stop hunting. Prepare the Minimum Findings Form: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC)+tail;
-  if(g.id==='g265')return(n>=30?'Submit now.':'5 minutes left. Get the '+(n>=10?'Minimum Findings Form':'MFR')+' ready.')+tail;
-  if(g.id==='g270')return(n>=10?'Stop. Submit through the Minimum Findings Form with tested areas and limitations.':'Stop. Under 10: start the MFR workflow.')+tail;
+  if(g.id==='g255')return(n>=30?'Stop hunting. Runtime Quality, final checks, submit.':n>=10?'Stop hunting. Prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC)+tail;
+  if(g.id==='g265')return(n>=30?'Submit now.':'5 minutes left. Get the '+'MFR workflow'+' ready.')+tail;
+  if(g.id==='g270')return(n>=10?'Stop. Run the Slack MFR workflow with tested areas and limitations.':'Stop. Under 10: start the MFR workflow.')+tail;
   return nextStep(t).p;
 }
 
@@ -213,7 +213,7 @@ function taskHtml(t){
   var head='<div class="thead"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><div class="row"><button class="btn sm mobtoggle" data-a="menu">Tasks</button><span class="pill '+OUT[t.status][1]+'">'+OUT[t.status][0]+'</span><span class="lab">Claimed '+day(t.createdAt)+'</span></div>'+
     (VIEW.editHead?'<form class="row" id="headForm"><input class="in" id="eApp" value="'+esc(t.app)+'" aria-label="App name" style="max-width:260px"><input class="in mono" id="eUrl" value="'+esc(t.featherUrl||'')+'" placeholder="Feather link" aria-label="Feather link" style="max-width:420px"><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editHead">Cancel</button></form>':
     '<h1>'+esc(t.app||'Untitled app')+'</h1><div class="row">'+(t.featherId?'<span class="fid"><code title="Feather task ID">'+esc(t.featherId)+'</code><button class="btn sm ghost" data-a="copyId">Copy</button></span>':'<span class="muted">No Feather ID</span>')+(t.featherUrl?'<a class="btn sm" href="'+esc(t.featherUrl)+'" target="_blank" rel="noopener">Open in Feather ↗</a>':'')+'<button class="btn sm ghost" data-a="editHead">Edit</button></div>')+
-    '</div><div class="row">'+(act?'<button class="btn sm" data-a="end" data-s="submitted"'+(c.n>=30?'':' title="Usually after 30 findings with 5 Bugs and 5 FRs"')+'>Mark submitted</button><button class="btn sm" data-a="end" data-s="form">Min. Findings Form sent</button><button class="btn sm" data-a="end" data-s="mfr">MFR submitted</button><button class="btn sm" data-a="end" data-s="outdated" title="Task went Outdated: submit it right away">Outdated · submitted</button><button class="btn sm danger" data-a="end" data-s="unclaimed">'+(t.additional?'Removed by HDM':'Unclaimed / released')+'</button>'+(elapsed(t)>=120*60&&counts(t).all<10&&!t.mfrRun?'<button class="btn sm" data-a="mfrRun">I ran the MFR workflow</button>':''):t.status==='mfr'?'<button class="btn sm" data-a="end" data-s="active">HDM: keep working</button><button class="btn sm" data-a="end" data-s="released">HDM closed it</button>':'<button class="btn sm" data-a="end" data-s="active">Reopen</button>')+(VIEW.confirmDel===t.id?'<button class="btn sm danger" data-a="delTask">Confirm delete task</button>':'<button class="btn sm ghost danger" data-a="delTask">Delete</button>')+'</div></div>';
+    '</div><div class="row">'+(act?'<button class="btn sm" data-a="end" data-s="submitted"'+(c.n>=30?'':' title="Usually after 30 findings with 5 Bugs and 5 FRs"')+'>Mark submitted</button><button class="btn sm" data-a="end" data-s="mfr">MFR submitted</button><button class="btn sm" data-a="end" data-s="outdated" title="Task went Outdated: submit it right away">Outdated · submitted</button><button class="btn sm danger" data-a="end" data-s="unclaimed">'+(t.additional?'Removed by HDM':'Unclaimed / released')+'</button>'+(elapsed(t)>=120*60&&counts(t).all<10&&!t.mfrRun?'<button class="btn sm" data-a="mfrRun">I ran the MFR workflow</button>':''):t.status==='mfr'?'<button class="btn sm" data-a="end" data-s="active">HDM: keep working</button><button class="btn sm" data-a="end" data-s="released">HDM closed it</button>':'<button class="btn sm" data-a="end" data-s="active">Reopen</button>')+(VIEW.confirmDel===t.id?'<button class="btn sm danger" data-a="delTask">Confirm delete task</button>':'<button class="btn sm ghost danger" data-a="delTask">Delete</button>')+'</div></div>';
   var tk=[0,45,90,180,240,270];
   var clock='<div class="card"><div class="clockcard"><div><div class="lab">AHT · synced to Hubstaff</div><div class="clock" id="clk">'+hms(e)+'<small> / 4:30:00</small></div><div class="lab" id="left" style="margin-top:6px">'+(e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60))+'</div></div>'+
     '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,90,180,240].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
@@ -327,7 +327,7 @@ document.addEventListener('click',function(ev){
   if(a==='delF'){if(VIEW.confirmDel!==b.dataset.id){VIEW.confirmDel=b.dataset.id;render();return}t.findings=t.findings.filter(function(x){return x.id!==b.dataset.id});(t.delF=t.delF||[]).push(b.dataset.id);VIEW.confirmDel=null;saveTask(t);render();toast('Finding deleted','','ok');return}
   if(a==='delTask'){if(VIEW.confirmDel!==t.id){VIEW.confirmDel=t.id;render();return}try{localStorage.removeItem(P+'t.'+t.id)}catch(e){}delete TASKS[t.id];IDX.ids=IDX.ids.filter(function(x){return x!==t.id});var did=t.id;IDX.cur=null;saveIdx();VIEW.mode='empty';VIEW.confirmDel=null;render();pushDelete(did);toast('Task deleted','','ok');return}
   if(a==='end'){var s=b.dataset.s;t.clockU=Date.now();if(s==='active'){t.status='active';resume(t)}else{pause(t);t.status=s;t.endedAt=Date.now()}saveTask(t);render();
-    toast(s==='mfr'?'MFR submitted':s==='submitted'?'Marked submitted':s==='form'?'Minimum Findings Form sent':s==='outdated'?'Outdated task submitted':s==='unclaimed'?'Marked unclaimed':s==='released'?'Released':'Back in progress',s==='mfr'?'Keep it In Progress in Feather. You may start 1 more task while you wait.':'','ok');return}
+    toast(s==='mfr'?'MFR submitted':s==='submitted'?'Marked submitted':s==='form'?'MFR submitted':s==='outdated'?'Outdated task submitted':s==='unclaimed'?'Marked unclaimed':s==='released'?'Released':'Back in progress',s==='mfr'?'Keep it In Progress in Feather. You may start 1 more task while you wait.':'','ok');return}
 });
 function findF(t,id){return(t.findings||[]).find(function(x){return x.id===id})}
 var dupTimers={};
