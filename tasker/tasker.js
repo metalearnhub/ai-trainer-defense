@@ -434,13 +434,14 @@ function matchesHtml(ms){
 var RUB=null;
 function openRub(t,f,mode){
   RUB={tid:t.id,fid:f.id,mode:mode,fields:JSON.parse(JSON.stringify(f.rub||{})),raw:(f.rub&&f.rub.raw)||''};
-  if(!f.rub){RUB.fields.type=f.type==='fr'?'fr':f.type==='bug'?'bug':''}
+  if(!f.rub){RUB.fields.type=f.type==='fr'?'fr':f.type==='bug'?'bug':''}if(RUB.fields.type==='fr')RUB.fields.steps='N/A';
   var el=$('#rubModal');if(el)el.remove();el=document.createElement('div');el.id='rubModal';el.className='rmodal';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','rubTitle');
   document.body.appendChild(el);drawRub();var r=$('#rubRaw');if(r)r.focus();
 }
 function rubField(k){var x=RFK[k],v=RUB.fields[k]||'';
   if(k==='type')return'<label class="rf"><span class="lab">Issue Type</span><select class="in" data-rf="type"><option value="">—</option><option value="bug"'+(v==='bug'?' selected':'')+'>Bug</option><option value="fr"'+(v==='fr'?' selected':'')+'>Feature request</option></select></label>';
   if(k==='prio')return'<label class="rf"><span class="lab">Priority</span><select class="in" data-rf="prio"><option value="">—</option>'+['P0','P1','P2'].map(function(p){return'<option'+(v===p?' selected':'')+'>'+p+'</option>'}).join('')+'</select></label>';
+  if(k==='steps'&&RUB.fields.type==='fr')return'<label class="rf wide"><span class="lab">Reproduction Steps</span><textarea class="in" rows="1" data-rf="steps" readonly aria-readonly="true">N/A</textarea><span class="hint">Feature requests always use N/A. Set Issue Type to Bug to write steps.</span></label>';
   var big=/steps|expected|actual/.test(k);
   return'<label class="rf'+(big?' wide':'')+(k==='summary'||k==='path'||k==='video'?' wide':'')+'"><span class="lab">'+x.l+'</span>'+(big?'<textarea class="in" rows="3" data-rf="'+k+'">'+esc(v)+'</textarea>':'<input class="in" data-rf="'+k+'" value="'+esc(v)+'">')+'</label>';
 }
@@ -460,7 +461,7 @@ function refreshRubChecks(){var c=$('#rubChecks');if(c&&RUB)c.innerHTML=matchesH
 function markDone(t,f){var now=elapsed(t);f.status='done';f.doneAt=now;if(f.startAt==null)f.startAt=now;t.lastAct=now;f.u=Date.now()}
 function saveRub(skip){
   if(!RUB)return;var t=TASKS[RUB.tid],f=t&&findF(t,RUB.fid);if(!f){closeRub();return}var done=RUB.mode==='done';
-  if(!skip){var r=RUB.fields;if(!String(r.summary||'').trim()){$('#rubErr').textContent='Add at least the Summary.';var s=$('[data-rf="summary"]');if(s)s.focus();return}
+  if(!skip){var r=RUB.fields;if(r.type==='fr')r.steps='N/A';if(!String(r.summary||'').trim()){$('#rubErr').textContent='Add at least the Summary.';var s=$('[data-rf="summary"]');if(s)s.focus();return}
     var keep={};KEEP.forEach(function(x){if(String(r[x.k]||'').trim())keep[x.k]=String(r[x.k]).trim()});keep.raw=RUB.raw;keep.at=Date.now();keep.app=t.app;f.rub=keep;
     if(keep.type==='bug'||keep.type==='fr')f.type=keep.type}
   if(done)markDone(t,f);else f.u=Date.now();
@@ -470,11 +471,11 @@ function saveRub(skip){
 }
 document.addEventListener('input',function(ev){
   if(!RUB)return;var el=ev.target;
-  if(el.id==='rubRaw'){RUB.raw=el.value;var p=parseRubric(el.value),keepType=RUB.fields.type;RUB.fields=p.fields;if(!RUB.fields.type&&keepType)RUB.fields.type=keepType;
+  if(el.id==='rubRaw'){RUB.raw=el.value;var p=parseRubric(el.value),keepType=RUB.fields.type;RUB.fields=p.fields;if(!RUB.fields.type&&keepType)RUB.fields.type=keepType;if(RUB.fields.type==='fr')RUB.fields.steps='N/A';
     $('#rubGrid').innerHTML=FORMK.map(rubField).join('');$$('#rubGrid textarea').forEach(grow);$('#rubParse').textContent=el.value?parseNote():'';refreshRubChecks();return}
   if(el.dataset&&el.dataset.rf){RUB.fields[el.dataset.rf]=el.value;if(el.tagName==='TEXTAREA')grow(el);clearTimeout(RUB.tm);RUB.tm=setTimeout(refreshRubChecks,300)}
 });
-document.addEventListener('change',function(ev){if(RUB&&ev.target.dataset&&ev.target.dataset.rf){RUB.fields[ev.target.dataset.rf]=ev.target.value;refreshRubChecks()}});
+document.addEventListener('change',function(ev){if(RUB&&ev.target.dataset&&ev.target.dataset.rf){var k=ev.target.dataset.rf;RUB.fields[k]=ev.target.value;if(k==='type'){if(ev.target.value==='fr')RUB.fields.steps='N/A';else if(RUB.fields.steps==='N/A'){var ps=RUB.raw?parseRubric(RUB.raw).fields.steps:'';RUB.fields.steps=ps&&ps!=='N/A'?ps:''}$('#rubGrid').innerHTML=FORMK.map(rubField).join('');$$('#rubGrid textarea').forEach(grow)}refreshRubChecks()}});
 document.addEventListener('keydown',function(ev){if(!RUB)return;if(ev.key==='Escape'){ev.preventDefault();if(!RUB.raw)closeRub()}else if(ev.key==='Enter'&&(ev.metaKey||ev.ctrlKey)){ev.preventDefault();saveRub(false)}},true);
 function rubCardHtml(t,f){
   if(f.status!=='done')return f.rub?'<div class="rubline"><span class="lab">Rubric on file</span><button class="btn sm ghost" data-a="rubEdit" data-id="'+f.id+'">View</button></div>':'';
