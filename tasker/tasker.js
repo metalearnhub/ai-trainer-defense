@@ -88,7 +88,7 @@ function nextStep(t){
   if(t.status==='submitted')return{tone:'ok',h:'Submitted',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings.'};
   if(t.status==='form')return{tone:'warn',h:'MFR submitted',p:'Closed at '+hm(elapsed(t))+' with '+n+' findings, tested areas and limitations documented.'};
   if(t.status==='outdated')return{tone:'warn',h:'Outdated · submitted',p:'Submitted as soon as it went Outdated, as the handbook asks.'};
-  if(t.status==='unclaimed')return{tone:'crit',h:'Unclaimed',p:'Released in Feather. No rating, scores or tags needed.'};
+  if(t.status==='unclaimed')return{tone:'crit',h:'Unclaimed',p:'Unclaimed or released in Feather. No rating, scores or tags needed.'};
   if(t.status==='released')return{tone:'warn',h:'Released',p:'Closed after the MFR or HDM review.'};
   if(t.status==='mfr')return{tone:'warn',h:'MFR submitted · awaiting HDM',p:'Keep this task In Progress in Feather. You may start 1 more task while you wait. An approved MFR sends the task to the Review Layer; you never need a second one.'};
   if(ok)return{tone:'ok',h:'Ready to submit',p:'Complete the Runtime Quality assessment, run final checks, then submit in Feather.'};
@@ -119,8 +119,8 @@ function gateMessage(t,g){
   if(g.id==='g15')return'Boot check: if the app won\'t load, won\'t boot or can\'t be tested, unclaim directly in Feather. No rating or tags.'+tail;
   if(g.id==='g45')return'Viability check: if the environment is broken or unusable, release the task. Otherwise keep going.'+tail;
   if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
-  if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 20–30.'+tail;
-  if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Aim for 20+; log what you have and check the Bug/FR mix.')+tail;
+  if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 30+.'+tail;
+  if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Push for 30+ and check the Bug/FR mix; if you\'ll land under 30, get the MFR workflow ready.')+tail;
   if(g.id==='g255')return(n>=30?'Stop hunting. Runtime Quality, final checks, submit.':n>=10?'Stop hunting. Prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC)+tail;
   if(g.id==='g265')return(n>=30?'Submit now.':'5 minutes left. Get the '+'MFR workflow'+' ready.')+tail;
   if(g.id==='g270')return(n>=10?'Stop. Run the Slack MFR workflow with tested areas and limitations.':'Stop. Under 10: start the MFR workflow.')+tail;
@@ -146,7 +146,7 @@ function alertUser(t,title,body,tone){
 function askPermission(){
   if(!('Notification' in window)){toast('Not supported','This browser can\'t show desktop notifications. In-app alerts and sound still work.','warn');return}
   Notification.requestPermission().then(function(p){IDX.settings.notify=p==='granted';saveIdx();render();
-    if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:40, 0:45, 1:30, 3:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
+    if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:15, 0:45, 1:50, 2:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
     else toast('Notifications blocked','Allow notifications for this site in Chrome\'s address bar (the icon left of the URL), then try again.','warn')})
 }
 function checkGates(){
@@ -195,11 +195,11 @@ function sideHtml(){
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
   '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
-function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:45, 1:30, 4:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
+function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:15, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
   var apps={};allTasks().forEach(function(t){if(t.app)apps[t.app]=1});
   var act=allTasks().filter(function(t){return t.status==='active'}),mfr=allTasks().filter(function(t){return t.status==='mfr'});
-  var warn=act.length>=1&&!mfr.length?'<div class="banner">You already have an active task. Standard is 1 at a time; a second is allowed only while the first waits on an MFR or HDM review. New experts: 1 only.</div>':act.length+mfr.length>=2?'<div class="banner">You have 2 tasks open. Max 2 active.</div>':'';
+  var warn=act.length>=1&&!mfr.length?'<div class="banner">You already have an active task. Standard is 1 at a time; a second is allowed only while the first waits on an MFR or HDM review. New experts: 1 only.</div>':act.length+mfr.length>=2?'<div class="banner">You have 2 tasks open. That is the max, and only while one waits on an MFR or HDM review.</div>':'';
   return'<div class="row"><button class="btn sm mobtoggle" data-a="menu">Tasks</button></div><form class="card form" id="newForm" autocomplete="off"><h1 style="margin:0;font-size:22px">New task</h1>'+warn+
   '<label for="nApp">App name<input class="in" id="nApp" list="appList" placeholder="e.g. Salesforce clone" required><datalist id="appList">'+Object.keys(apps).map(function(a){return'<option value="'+esc(a)+'">'}).join('')+'</datalist><span class="hint" id="nAppHint">Same name as before lets the app check your past findings for duplicates.</span></label>'+
   '<label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
@@ -244,7 +244,7 @@ function mbarHtml(t){
 function stratHtml(t){
   var M=metrics(t),c=M.c,tone=function(a,b){return a>=b-1?'ok':'warn'};
   if(t.status!=='active')return'<span class="lab">Pace</span><p class="hint" style="margin:0">Found '+c.all+' · logged '+c.n+' in '+hm(elapsed(t))+'. Average capture '+(M.avgCap?mmss(M.avgCap*60):'—')+', average log '+(M.avgLog?mmss(M.avgLog*60):'—')+'.</p>';
-  var verdict=c.n>=30?'Logged 30.':M.feasible?'On track: about '+Math.min(30,M.proj)+(M.proj>=30?'+':'')+' logged by 4:15 at your pace.':'Short: about '+M.proj+' logged by 4:15 at your pace. Speed up, or plan the MFR (4:00 if 20–29 found).';
+  var verdict=c.n>=30?'Logged 30.':M.feasible?'On track: about '+Math.min(30,M.proj)+(M.proj>=30?'+':'')+' logged by 4:15 at your pace.':'Short: about '+M.proj+' logged by 4:15 at your pace. Speed up, or plan the MFR workflow (under 30 at 4:30).';
   return'<span class="lab">Your pace · learned from this task</span>'+
   '<div class="sgrid"><div class="'+tone(c.all,M.pf)+'"><b class="mono">'+c.all+' / '+Math.round(M.pf)+'</b><span>found / plan now</span></div><div class="'+tone(c.n,M.pl)+'"><b class="mono">'+c.n+' / '+Math.round(M.pl)+'</b><span>logged / plan now</span></div>'+
   '<div><b class="mono">'+(M.avgCap?mmss(M.avgCap*60):'—')+'</b><span>avg to capture one</span></div><div><b class="mono">'+(M.avgLog?mmss(M.avgLog*60):'—')+'</b><span>avg to log one</span></div>'+
