@@ -55,8 +55,8 @@ var STAGES=[
   {id:'build',a:120,b:255,n:'Build',d:'Build toward 30+. Under 30 only goes in through the MFR workflow.'},
   {id:'wrap',a:255,b:270,n:'Wrap',d:'Runtime Quality and final checks. At 4:30: under 30 → Slack MFR workflow.'}
 ];
-function stageFor(t,m){return t&&t.huntDone&&m<45?STAGES[1]:stageOf(m)}
-function stageOf(m){for(var i=0;i<STAGES.length;i++)if(m<STAGES[i].b)return STAGES[i];return STAGES[STAGES.length-1]}
+function stageFor(t,m){var S=stagesNow();return t&&t.huntDone&&m<45?S[S.length===STAGES.length?1:0]:stageOf(m)}
+function stageOf(m){var S=stagesNow();for(var i=0;i<S.length;i++)if(m<S[i].b)return S[i];return S[S.length-1]}
 /* pace model: learns your own capture and logging times from this task */
 function metrics(t){
   var e=elapsed(t)/60,c=counts(t),f=t.findings||[];
@@ -74,7 +74,7 @@ function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitl
 function mmss(sec){sec=Math.max(0,Math.round(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function doNow(t){
   if(t.status!=='active')return null;var M=metrics(t),e=M.e,c=M.c;if(e>=AHT)return null;
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left',p:'Test the whole app freely and type what you see. Unstable, or clearly can\'t yield 20+ findings? Unclaim before 0:45. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
+  if(triOn()&&e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left',p:'Test the whole app freely and type what you see. Unstable, or clearly can\'t yield 20+ findings? Unclaim before 0:45. Plan: about '+Math.round(planFound(45))+' found by 0:45. Press Exploration done to start logging early.'};
   if(c.n>=30)return null;
   var pr=oldestProg(t);
   if(pr){var spent=(elapsed(t)-(pr.startAt||elapsed(t)))/60,tg=M.target;return spent<=tg?{tone:'info',h:'Finish “'+first(pr)+'” within '+mmss((tg-spent)*60),p:'Budget '+mmss(tg*60)+' a finding to reach 30 by 4:15. Write the summary, run Flow, log in Feather, then mark it Done.'}:{tone:'warn',h:'Over budget on “'+first(pr)+'” by '+mmss((spent-tg)*60),p:'Wrap it up and mark it Done, or move it back to Not started and take the next one.'}}
@@ -95,7 +95,7 @@ function nextStep(t){
   if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
   if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
-  if(e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Low-yield runtime (boots, but high-fidelity clone with low defect density or limited workflow coverage, so it clearly can\'t yield 20+ findings) → unclaim/release too. Before 0:45, no rating or tags.'};
+  if(triOn()&&e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Low-yield runtime (boots, but high-fidelity clone with low defect density or limited workflow coverage, so it clearly can\'t yield 20+ findings) → unclaim/release too. Before 0:45, no rating or tags.'};
   var pf=planFound(e),pfl=planFloor(e);
   if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
   if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
@@ -111,6 +111,10 @@ var GATES=[
   {id:'g265',m:265,t:'4:25',l:'5 min to 4:30'},
   {id:'g270',m:270,t:'4:30',l:'Stop hunting · under 30 → MFR · Hubstaff stays on'}
 ];
+function triOn(){return!!(IDX&&IDX.settings&&IDX.settings.triage)}
+function gatesNow(){return triOn()?GATES:GATES.filter(function(g){return g.id!=='g35'&&g.id!=='g45'})}
+var STAGES_NOTRI=null;function stagesNow(){if(triOn())return STAGES;if(!STAGES_NOTRI){var h=STAGES[1];STAGES_NOTRI=[{id:'hunt',a:0,b:h.b,n:h.n,d:h.d}].concat(STAGES.slice(2))}return STAGES_NOTRI}
+
 function gateMessage(t,g){
   var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
   if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Unstable or broken, or is it a low-yield runtime that won\'t yield 20+ findings (high-fidelity clone, low defect density, limited workflow coverage)? Unclaim before 0:45. No rating or tags.'+tail;
@@ -151,7 +155,7 @@ function checkGates(){
   allTasks().forEach(function(t){
     if(t.status!=='active'||!running(t))return;
     t.fired=t.fired||{};var m=elapsed(t)/60,changed=false;
-    GATES.forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
+    gatesNow().forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
     var c=counts(t),es=elapsed(t);
     if((m>=45||t.huntDone)&&c.n<30){var pr=oldestProg(t),M=metrics(t);
       if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done. Stuck? Mark why on the finding: Flow slow, recording, Flow validation or environment.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Can\'t move forward? Mark why on the finding (Flow slow, recording, Flow validation, environment), or park it and start the next draft.','warn')}}
@@ -190,7 +194,7 @@ function sideHtml(){
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><button class="btn ghost" data-a="guide" aria-current="'+(VIEW.mode==='guide')+'" style="width:100%;justify-content:center;margin-bottom:8px">Guide · rules &amp; workflow</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="focusOn"'+(IDX.settings.full?'':' checked')+'> Focus view (simple panel)</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="triOn"'+(IDX.settings.triage?' checked':'')+'> 45-minute triage checkpoint</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:35, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -214,13 +218,13 @@ function taskHtml(t){
   var tk=[0,45,120,270];
   var clock='<div class="card"><div class="clockcard"><div><div class="lab">AHT · synced to Hubstaff</div><div class="clock" id="clk">'+hms(e)+'<small> / 4:30:00</small></div><div class="lab" id="left" style="margin-top:6px">'+(e<AHT*60?hm(AHT*60-e)+' left':'Over AHT by '+hm(e-AHT*60))+'</div></div>'+
     '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="bar" aria-hidden="true"><i id="clkBar" style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+[45,120,255].map(function(m){return'<u style="left:'+(m/AHT*100)+'%"></u>'}).join('')+'</div><div class="ticks">'+tk.map(function(m){return'<span style="left:'+(m/AHT*100)+'%">'+hm(m*60)+'</span>'}).join('')+'</div>'+
-    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button>'+(elapsed(t)<45*60&&!t.huntDone?'<button class="btn sm" data-a="huntDone">Triage done</button>':'')+'<button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm'+(t.offset?' ghost':'')+'" data-a="prior">'+(t.offset?'Earlier days '+hm(t.offset)+' · edit':'+ Earlier-day time')+'</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
+    '<div class="row">'+(t.status==='active'||t.status==='mfr'?'<button class="btn sm '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause (Hubstaff stopped)':'Resume (Hubstaff running)')+'</button>'+(triOn()&&elapsed(t)<45*60&&!t.huntDone?'<button class="btn sm" data-a="huntDone">Triage done</button>':'')+'<button class="btn sm" data-a="sync">Sync to Hubstaff</button><button class="btn sm'+(t.offset?' ghost':'')+'" data-a="prior">'+(t.offset?'Earlier days '+hm(t.offset)+' · edit':'+ Earlier-day time')+'</button><button class="btn sm" data-a="nudge" data-d="-60">−1 min</button><button class="btn sm" data-a="nudge" data-d="60">+1 min</button>':'')+'</div>'+
     (VIEW.prior?'<form class="row" id="priorForm"><label for="priorIn" class="hint">Time spent on this task on earlier days (not in today\'s Hubstaff)</label><input class="in mono" id="priorIn" value="'+hms(t.offset||2700)+'" inputmode="numeric" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="prior">Cancel</button><span class="hint" style="flex-basis:100%">Added to the AHT clock now and on every Hubstaff sync. Use 0:00:00 to remove it.</span></form>':'')+(VIEW.sync?'<form class="row" id="syncForm"><label for="syncIn" class="hint">Look at Hubstaff and type its time'+(t.offset?' (today only; '+hm(t.offset)+' from earlier days is added)':'')+'</label><input class="in mono" id="syncIn" placeholder="1:23:45" inputmode="numeric" style="width:120px"><button class="btn sm pri" type="submit">Set</button><button class="btn sm" type="button" data-a="sync">Cancel</button><span class="hint" style="flex-basis:100%">No need to stop Hubstaff. The seconds you take to type are added automatically.</span></form>':'')+
     '</div></div><div class="counts"><div><b>'+c.all+'</b><span>found</span></div><div><b id="cN">'+c.n+'<small class="muted" style="font-size:14px">/30</small></b><span>logged (Done)</span></div><div><b style="color:var(--bug)">'+c.b+'</b><span>Bugs · min 5</span></div><div><b style="color:var(--fr)">'+c.fr+'</b><span>FRs · min 5</span></div><div><b>'+c.prog+'</b><span>in progress</span></div><div><b>'+c.draft+'</b><span>not started</span></div><div><b>'+(e>=300?(c.n/(e/3600)).toFixed(1):'—')+'</b><span>done / hour</span></div></div></div>';
   var fl=(t.findings||[]).filter(function(f){return VIEW.filter==='all'||f.status===VIEW.filter});
   var findings='<div class="card"><div class="row"><span class="lab">Findings · rapid hunt</span><span class="sp"></span><div class="seg" role="group" aria-label="Filter">'+[['all','All '+c.all],['draft','Draft '+c.draft],['progress','In progress '+c.prog],['done','Done '+c.n]].map(function(x){return'<button type="button" class="all" data-a="filter" data-f="'+x[0]+'" aria-pressed="'+(VIEW.filter===x[0])+'">'+x[1]+'</button>'}).join('')+'</div></div>'+
     (t.pre||VIEW.editPre?'<div class="prebar">'+(VIEW.editPre?'<form class="row" id="preForm"><span class="lab">Before tracking</span><label class="hint">Found <input class="in mono sm" id="pF" type="number" min="0" value="'+((t.pre||{}).f||0)+'"></label><label class="hint">Logged <input class="in mono sm" id="pL" type="number" min="0" value="'+((t.pre||{}).l||0)+'"></label><label class="hint">Bugs <input class="in mono sm" id="pB" type="number" min="0" value="'+((t.pre||{}).b||0)+'"></label><label class="hint">FRs <input class="in mono sm" id="pR" type="number" min="0" value="'+((t.pre||{}).r||0)+'"></label><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editPre">Cancel</button></form>':'<span class="lab">Before tracking</span><span>'+(t.pre.f||0)+' found · '+(t.pre.l||0)+' logged ('+(t.pre.b||0)+' Bugs, '+(t.pre.r||0)+' FRs) · included in your totals</span><button class="btn sm ghost" data-a="editPre">Edit</button>')+'</div>':'<div class="prebar quiet"><button class="btn sm ghost" data-a="editPre">+ Add findings made before tracking</button></div>')+'<form class="addbar" id="addForm"><div class="seg" role="group" aria-label="Type">'+[['bug','Bug'],['fr','FR'],['unk','?']].map(function(x){return'<button type="button" class="'+x[0]+'" data-a="addType" data-t="'+x[0]+'" aria-pressed="'+(VIEW.addType===x[0])+'">'+x[1]+'</button>'}).join('')+'</div><input class="in" id="addIn" placeholder="'+(VIEW.addType==='fr'?'Page: Capability should …':'Page: Component failure when trigger')+'  (Enter adds a draft)" aria-label="New draft finding"><button class="btn pri" type="submit">Add</button></form>'+
-    '<div class="row hint"><span>Circle: not started → in progress (running Flow) → done (logged in Feather). Found counts every finding; logged counts Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>'+
+    (focusOn()?'<div class="row hint" style="justify-content:flex-end"><span class="saved" data-saved></span></div>':'<div class="row hint"><span>Circle: not started → in progress (running Flow) → done (logged in Feather). Found counts every finding; logged counts Done.</span><span class="sp"></span><span class="saved" data-saved></span></div>')+
     '<div class="fscroll" id="fscroll">'+(VIEW.filter==='all'?groupedHtml(t,fl,c):'<div class="flist">'+(fl.length?fl.map(function(f){return fHtml(t,f)}).join(''):'<p class="muted" style="margin:0">Nothing in this filter.</p>')+'</div>')+'</div></div>';
   var gates='<div class="next '+s.tone+'" id="next"><div class="row"><span class="lab">Rule check</span><span class="sp"></span><button class="btn sm ghost" data-a="guide" data-g="clock" data-tip="Open the guide at the clock-vs-count table.">Guide</button></div><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
@@ -228,11 +232,13 @@ function taskHtml(t){
   var pq=VIEW.pastQ.toLowerCase(),pl=past.filter(function(p){return!pq||String(p.f.text).toLowerCase().indexOf(pq)>=0});
   var nTasks={};past.forEach(function(p){nTasks[p.task.id]=1});
   var pastHtml='<div class="card"><span class="lab">Past findings on '+esc(t.app||'this app')+'</span>'+(past.length?'<p class="hint" style="margin:0">'+Object.keys(nTasks).length+' earlier task'+(Object.keys(nTasks).length>1?'s':'')+', '+past.length+' findings. Drafts that match one get an amber flag.</p><input class="in" data-in="pastQ" id="pastQ" placeholder="Search past findings" value="'+esc(VIEW.pastQ)+'" aria-label="Search past findings"><div class="past">'+pl.slice(0,200).map(function(p){var first=String(p.f.text||'').split('\n')[0];return'<div class="pf '+p.f.type+'"><div class="m">'+day(p.task.createdAt)+' · '+(p.f.type==='bug'?'Bug':p.f.type==='fr'?'FR':'?')+' · '+(p.f.status==='done'?'done':p.f.status)+'</div>'+esc(first||'(empty)')+'</div>'}).join('')+'</div>':'<p class="hint" style="margin:0">'+(key?'First task on this app. Next time you claim it, this list shows what you already filed.':'Name the app to compare with earlier tasks.')+'</p>')+'</div>';
+  var center='<section class="tcenter" aria-label="Findings">'+findings.replace('<div class="card">','<div class="card fcard">')+'</section>';
+  if(focusOn())return'<div class="tview focus">'+center+'<aside class="tright" id="tright" aria-label="AHT, counts and pace">'+focusPanel(t,{nb:nb,head:head,clock:clock,gates:gates,notes:notes,pastHtml:pastHtml})+'</aside></div>';
   return'<div class="tview"><section class="tcenter" aria-label="Findings">'+findings.replace('<div class="card">','<div class="card fcard">')+'</section><aside class="tright" id="tright" aria-label="Task, clock and rules"><div class="rtop">'+nb+head+'<div class="mbar" id="mbar">'+mbarHtml(t)+'</div>'+clock+'</div><div class="rrest">'+gates+notes+pastHtml+'</div></aside></div>';
 }
 function mbarHtml(t){
-  var e=elapsed(t),m=e/60,st=stageFor(t,m),c=counts(t),dn=doNow(t),nx=null;for(var i=0;i<GATES.length;i++)if(GATES[i].m>m){nx=GATES[i];break}
-  var segs=STAGES.map(function(x){var w=(x.b-x.a)/AHT*100,on=x===st,pct=on?Math.min(100,(m-x.a)/(x.b-x.a)*100):m>=x.b?100:0;return'<div class="seg2'+(on?' on':m>=x.b?' past':'')+'" style="flex:'+w+' 1 0"><i style="width:'+pct+'%"></i><b>'+x.n+'</b><span>'+hm(x.a*60)+'–'+hm(x.b*60)+'</span></div>'}).join('');
+  var e=elapsed(t),m=e/60,st=stageFor(t,m),c=counts(t),dn=doNow(t),nx=null,GN=gatesNow();for(var i=0;i<GN.length;i++)if(GN[i].m>m){nx=GN[i];break}
+  var segs=stagesNow().map(function(x){var w=(x.b-x.a)/AHT*100,on=x===st,pct=on?Math.min(100,(m-x.a)/(x.b-x.a)*100):m>=x.b?100:0;return'<div class="seg2'+(on?' on':m>=x.b?' past':'')+'" style="flex:'+w+' 1 0"><i style="width:'+pct+'%"></i><b>'+x.n+'</b><span>'+hm(x.a*60)+'–'+hm(x.b*60)+'</span></div>'}).join('');
   return'<div class="mrow"><div class="mclock"><span class="lab">AHT · '+(running(t)?'running':'paused')+'</span><b class="mono">'+hms(e)+'</b><span class="mono muted">'+(e<AHT*60?hm(AHT*60-e)+' left of 4:30':'over AHT by '+hm(e-AHT*60))+'</span></div>'+
   '<div class="mstage"><div class="segs">'+segs+'</div><div class="mnow"><span class="pill info">Stage · '+st.n+'</span><span class="mdesc">'+esc(st.d)+'</span><span class="mono mends">'+(m<st.b?'ends in '+mmss((st.b-m)*60):'')+'</span></div></div>'+
   '<div class="mcount"><div><b class="mono">'+c.all+'</b><span>found</span></div><div><b class="mono">'+c.n+'</b><span>logged</span></div><div><b class="mono">'+(nx?nx.t:'—')+'</b><span>'+(nx?'next gate · '+mmss((nx.m-m)*60):'no gates left')+'</span></div></div></div>'+
@@ -257,7 +263,7 @@ function groupedHtml(t,fl,c){
   if(!pr.length&&!dr.length)h+='<p class="muted" style="margin:0">Everything is done. Add the next finding above.</p>';
   if(dn.length)h+='<button type="button" class="donebar" data-a="toggleDone" aria-expanded="'+open+'"><span class="lab">Done · '+dn.length+'</span><span class="sp"></span><span>'+(open?'Hide':'Show')+'</span></button>'+(open?'<div class="flist">'+dn.map(function(f){return fHtml(t,f)}).join('')+'</div>':'');
   return h}
-function gatesHtml(e){return GATES.map(function(g,i){var m=e/60,nx=GATES[i+1];var st=m>=g.m&&(!nx||m<nx.m)?'now':m>=g.m?'past':'';return'<div class="gate '+st+'"><span class="t">'+g.t+'</span><i></i><span>'+esc(g.l)+'</span></div>'}).join('')}
+function gatesHtml(e){var GN=gatesNow();return GN.map(function(g,i){var m=e/60,nx=GN[i+1];var st=m>=g.m&&(!nx||m<nx.m)?'now':m>=g.m?'past':'';return'<div class="gate '+st+'"><span class="t">'+g.t+'</span><i></i><span>'+esc(g.l)+'</span></div>'}).join('')}
 function fHtml(t,f){
   var d=dupOf(t,f);
   return'<div class="f '+f.status+(d?' dup':'')+'" data-fid="'+f.id+'"><button class="st '+f.status+'" data-a="cycle" data-id="'+f.id+'" aria-label="Status: '+f.status+'. Click to change">'+(f.status==='done'?'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'')+'</button>'+
@@ -284,6 +290,7 @@ function tick(){
     document.title=hm(e)+' · '+counts(t).n+'/30 · '+(t.app||'Task')+' · AI Trainer Tasker';
     var m=Math.floor(e/60);if(m!==lastMin){lastMin=m;var nx=$('#next');if(nx){var s=nextStep(t);nx.className='next '+s.tone;nx.innerHTML='<div class="row"><span class="lab">Rule check</span><span class="sp"></span><button class="btn sm ghost" data-a="guide" data-g="clock" data-tip="Open the guide at the clock-vs-count table.">Guide</button></div><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p>'}}var gb=$('#gates');if(gb)gb.innerHTML=gatesHtml(e);
     var mb=$('#mbar');if(mb)mb.innerHTML=mbarHtml(t);
+    var hd=$('#hud');if(hd){hd.className='hud heat-'+heatOf(t).cls;hd.innerHTML=hudInner(t)}var hr=$('#hrule');if(hr&&Math.floor(e)%15===0){var tmp=document.createElement('div');tmp.innerHTML=hruleHtml(t);hr.replaceWith(tmp.firstChild)}
     if(Math.floor(e)%5===0){var sg=$('#strat');if(sg)sg.innerHTML=stratHtml(t)}
     var M=null;$$('[data-ft]').forEach(function(el){var f=findF(t,el.dataset.ft);if(!f)return;M=M||metrics(t);var sp=e-(f.startAt||e),tg=M.target*60;el.textContent=mmss(sp)+' / '+mmss(tg);el.className='ftimer'+(sp>tg?' over':'');var sk=document.querySelector('[data-stuck="'+f.id+'"]');if(sk)sk.classList.toggle('over',sp>tg)});
   }else document.title='AI Trainer Tasker';
@@ -646,6 +653,16 @@ var TIPS=[
   ['[data-a="breakdown"]','A copyable time breakdown for your HDM: AHT, overage, blocked time by reason (Flow slow, recording, Flow validation, environment) and your slowest findings.'],
   ['[data-a="delTask"]','Delete this task from the app on all devices. Feather is not affected.'],
   ['.mclock','Elapsed AHT, mirrored from Hubstaff. 4:30 is the ceiling.'],
+  ['.hclock','AHT, synced to Hubstaff. Colour heats up as the next checkpoint nears: blue (30+ min away), amber (under 30), red (under 10), dark red past 4:30.'],
+  ['.hbar','Progress to 4:30, with checkpoint marks.'],
+  ['.hnums > div:nth-child(1)','Drafts: captured, not started.'],
+  ['.hnums > div:nth-child(2)','Working: findings you are writing up now (rubric, Flow, Feather).'],
+  ['.hnums > div:nth-child(3)','Logged: marked Done in Feather. 30+ is the standard.'],
+  ['.hpace','Found so far vs the 30-by-4:15 plan at this minute.'],
+  ['[data-a="details"]','Show the full dashboard: stages, gates, pace analytics, notes and past findings.'],
+  ['[data-a="actions"]','Status buttons: submitted, MFR, Outdated, unclaimed, time breakdown, edit.'],
+  ['label:has(#focusOn)','Simple panel with only the clock, counts, pace and the current rule. Turn off for the full dashboard.'],
+  ['label:has(#triOn)','Show the 0:00–0:45 triage stage and its 0:35 / 0:45 alerts. Off: the first checkpoint is 2:00.'],
   ['.seg2',function(el){var n=(el.querySelector('b')||{}).textContent;return STAGE_TIP[n]||''}],
   ['.mnow .pill','The stage you are in now. Its rule is shown beside it.'],
   ['.mends','Time left in this stage.'],
@@ -793,6 +810,38 @@ document.addEventListener('click',function(ev){var b=ev.target.closest('[data-a]
   if(a==='tbCopy'){var v=($('#tbText')||{}).value||'';try{navigator.clipboard.writeText(v).then(function(){toast('Copied','Paste it to your HDM with the task ID.','ok')},function(){toast('Copy blocked','Select the text and copy it instead.','warn')})}catch(e){toast('Copy blocked','Select the text and copy it instead.','warn')}return}
 });
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape'){var m=$('#tbModal');if(m)m.remove()}});
+
+/* ---------- focus view: one glanceable HUD (default); details on demand ---------- */
+function focusOn(){return!IDX.settings.full}
+var CP_NAME={45:'Triage window closes',120:'2:00 checkpoint',270:'4:30 AHT'};
+function heatOf(t){var e=elapsed(t)/60,cps=(triOn()?[45]:[]).concat([120,270]),nx=null;for(var i=0;i<cps.length;i++)if(cps[i]>e){nx=cps[i];break}
+  if(nx==null)return{cls:'over',nx:null,left:e-270};var left=nx-e;return{cls:left<=10?'hot':left<=30?'warm':'cold',nx:nx,left:left}}
+function hudInner(t){var e=elapsed(t),m=e/60,c=counts(t),h=heatOf(t),pf=planFound(m),F=c.all,ok=F>=pf-1,cps=(triOn()?[45]:[]).concat([120]);
+  var nxt=h.nx==null?'Over 4:30 by '+hm(e-AHT*60)+' · keep Hubstaff on':CP_NAME[h.nx]+' in '+hm(h.left*60);
+  var pace=c.n>=30?{c:'ok',w:'30+ logged',d:c.b+' Bugs · '+c.fr+' FRs'}:m<45&&!t.huntDone?{c:'',w:'Exploring',d:F+' found so far'}:ok?{c:'ok',w:'On pace',d:'found '+F+' · plan '+Math.round(pf)}:{c:'warn',w:'Behind by '+Math.max(1,Math.round(pf-F)),d:'found '+F+' · plan '+Math.round(pf)};
+  return'<div class="hclock"><span class="lab">AHT'+(running(t)?'':' · paused')+'</span><b class="mono">'+hms(e)+'</b><span class="hnext">'+esc(nxt)+'</span></div>'+
+  '<div class="hbar" aria-hidden="true"><i style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+cps.map(function(x){return'<u style="left:'+(x/AHT*100)+'%"></u>'}).join('')+'</div>'+
+  '<div class="hnums"><div><b class="mono">'+c.draft+'</b><span>Drafts</span></div><div class="work"><b class="mono">'+c.prog+'</b><span>Working</span></div><div><b class="mono">'+c.n+'<small>/30</small></b><span>Logged</span></div></div>'+
+  '<div class="hpace '+pace.c+'"><b>'+pace.w+'</b><span>'+pace.d+'</span></div>'}
+function hudHtml(t){return'<div class="hud heat-'+heatOf(t).cls+'" id="hud">'+hudInner(t)+'</div>'}
+function hruleHtml(t){var s=nextStep(t),h=heatOf(t),F=counts(t).all;
+  if(t.status==='active'&&h.nx===120&&h.left<=15){var w=F<5?'under 5 → MFR and release':F<10?'5–9 → MFR, follow its answer':'10+ → keep going';return'<div class="hrule '+(F<10?'warn':'ok')+'" id="hrule" data-tip="2:00 checkpoint: under 5 → MFR and release · 5–9 → MFR and follow it · 10+ → keep testing toward 30+."><b>2:00 checkpoint · '+F+' found: '+w+'</b></div>'}
+  if(/pace/i.test(s.h))return'<div id="hrule" hidden></div>';
+  return'<div class="hrule '+s.tone+'" id="hrule" data-tip="'+esc(s.p)+'"><b>'+esc(s.h)+'</b></div>'}
+function focusPanel(t,parts){
+  var act=t.status==='active'||t.status==='mfr',forms=(parts.clock.match(/<form class="row" id="(?:priorForm|syncForm)">[\s\S]*?<\/form>/g)||[]).join('');
+  var title='<div class="ftitle"><div style="min-width:0"><b>'+esc(t.app||'Untitled app')+'</b><span class="pill '+OUT[t.status][1]+'">'+OUT[t.status][0]+'</span></div><span class="sp"></span>'+(t.featherUrl?'<a class="btn sm ghost" href="'+esc(t.featherUrl)+'" target="_blank" rel="noopener">Feather ↗</a>':'')+'<button class="btn sm ghost" data-a="actions" aria-expanded="'+!!VIEW.actions+'">'+(VIEW.actions?'Hide actions':'Task actions')+'</button></div>';
+  var ctrl=act?'<div class="hctrl"><button class="btn '+(running(t)?'':'pri')+'" data-a="run">'+(running(t)?'Pause':'Resume')+'</button><button class="btn" data-a="sync">Sync Hubstaff</button><span class="sp"></span><button class="btn ghost" data-a="details" aria-expanded="'+!!VIEW.details+'">'+(VIEW.details?'Hide details':'Details')+'</button></div>':'<div class="hctrl"><span class="sp"></span><button class="btn ghost" data-a="details" aria-expanded="'+!!VIEW.details+'">'+(VIEW.details?'Hide details':'Details')+'</button></div>';
+  return'<div class="rtop">'+parts.nb+title+(VIEW.actions?parts.head:'')+hudHtml(t)+hruleHtml(t)+ctrl+forms+'</div>'+(VIEW.details?'<div class="rrest">'+'<div class="mbar" id="mbar">'+mbarHtml(t)+'</div>'+parts.clock.replace(/<form class="row" id="(?:priorForm|syncForm)">[\s\S]*?<\/form>/g,'')+parts.gates+parts.notes+parts.pastHtml+'</div>':'');
+}
+document.addEventListener('click',function(ev){var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a;
+  if(a==='details'){VIEW.details=!VIEW.details;render();return}
+  if(a==='actions'){VIEW.actions=!VIEW.actions;render();return}
+});
+document.addEventListener('change',function(ev){
+  if(ev.target.id==='focusOn'){IDX.settings.full=!ev.target.checked;saveIdx();render();return}
+  if(ev.target.id==='triOn'){IDX.settings.triage=ev.target.checked;saveIdx();STAGES_NOTRI=null;var t=cur();if(t){markPastGates(t);saveTask(t)}render();return}
+});
 
 /* ---------- backup ---------- */
 function exportData(){var data={app:'AI Trainer Tasker',version:1,exportedAt:new Date().toISOString(),tasks:allTasks()};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ai-trainer-tasker-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast('Backup exported',allTasks().length+' tasks saved to your Downloads.','ok')}
