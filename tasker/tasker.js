@@ -925,21 +925,18 @@ function syncLabel(){
 }
 function syncBits(){var el=$('#syncLab');if(el){el.textContent=syncLabel();el.className='synclab '+(sessOk()?(SYNC.state==='synced'?'ok':SYNC.state==='error'?'err':''):'')}}
 function initCloud(){if(sessOk())pull(true)}
-setInterval(function(){if(SESSION&&!sessOk())signOutLocal('24 hours passed. Sign in again with your email.')},60000);
+setInterval(function(){if(SESSION&&!sessOk())signOutLocal('Your sign-in expired. Enter your PIN again.')},60000);
 function authScreen(){
   var a=VIEWAUTH;
-  return'<div class="gate-wrap"><form class="card form" id="authForm" autocomplete="on"><div class="brand" style="padding:0">'+LOGO+'<div><b>AI Trainer Tasker</b><span class="lab">Private · email sign-in</span></div></div>'+
-  (!a.sent?'<p class="hint" style="margin:0">Enter your email. A 6-digit code is sent from hello@dijaedadula.com. You stay signed in for 24 hours on this device.</p><label for="aEmail">Email<input class="in" id="aEmail" type="email" autocomplete="email" required value="'+esc(a.email)+'"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Sending…':'Send code')+'</button></div>':
-  '<p class="hint" style="margin:0">Code sent to <b>'+esc(a.email)+'</b>. Check your inbox and spam. It expires in 10 minutes.</p><label for="aCode">6-digit code<input class="in mono" id="aCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required style="font-size:22px;letter-spacing:.3em"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Checking…':'Sign in')+'</button><button class="btn" type="button" data-a="authBack">Use another email</button><button class="btn ghost" type="button" data-a="authResend">Send a new code</button></div>')+
+  return'<div class="gate-wrap"><form class="card form" id="authForm" autocomplete="on"><div class="brand" style="padding:0">'+LOGO+'<div><b>AI Trainer Tasker</b><span class="lab">Private · one-time device PIN</span></div></div>'+
+  '<p class="hint" style="margin:0">Enter your 6-digit PIN once. This device then stays signed in for a year.</p><label for="aCode">PIN<input class="in mono" id="aCode" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" required style="font-size:22px;letter-spacing:.3em"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Checking…':'Open Tasker')+'</button></div>'+
   '</form></div>';
 }
-function authSubmit(resend){
+function authSubmit(){
   var a=VIEWAUTH;if(a.busy)return;
-  if(!a.sent||resend){var em=resend?a.email:($('#aEmail').value||'').trim().toLowerCase();if(!em)return;a.email=em;lsSet('lastEmail',em);a.busy=true;a.err='';render();
-    api({action:'code',email:em},false).then(function(){a.sent=true;a.busy=false;a.err='';render();var c=$('#aCode');if(c)c.focus()}).catch(function(e){a.busy=false;a.err=e.message;render()});return}
   var code=($('#aCode').value||'').replace(/\D/g,'');if(code.length<6){a.err='Enter all 6 digits.';render();return}
   a.busy=true;a.err='';render();
-  api({action:'verify',email:a.email,code:code},false).then(function(d){a.busy=false;a.sent=false;SESSION={token:d.token,expires_at:d.expires_at,email:d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','Syncing across your devices for the next 24 hours.','ok');pull(true)})
+  api({action:'verify',email:'dijaedadula@gmail.com',code:code},false).then(function(d){a.busy=false;SESSION={token:d.token,expires_at:d.expires_at,email:d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','This device stays signed in for a year.','ok');pull(true)})
   .catch(function(e){a.busy=false;a.err=e.message;render();var c=$('#aCode');if(c)c.focus()});
 }
 
