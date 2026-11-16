@@ -1,1 +1,6 @@
-{"trailingSlash": true}
+{
+  "trailingSlash": true,
+  "redirects": [
+    { "source": "/", "has": [{ "type": "host", "value": "tasker.dijaedadula.com" }], "destination": "/tasker/", "permanent": false }
+  ]
+}
