@@ -1184,7 +1184,7 @@ async function copyReport(note){const t=reportText();try{await navigator.clipboa
 function wireCoach(){
 const note=$('#coachNote');
 $('#copyRep').onclick=()=>copyReport(note);
-$('#coachBtn').onclick=()=>{copyReport(note);const f=$('#coachFrame');if(!f.firstChild)f.innerHTML='<iframe src="'+COACH_URL+'" title="AI Trainer Defense Coach" style="width:100%;height:600px;border:0;border-radius:12px;background:#fff"></iframe>';f.scrollIntoView({behavior:'smooth',block:'start'})};
+$('#coachBtn').onclick=()=>{copyReport(note);const f=$('#coachFrame');f.innerHTML='<p style="padding:12px 0">Report copied. The AI coach is moving to a new home and will be back soon.</p>'};
 }
 syncAudioBtns();renderRank();renderTitle();
 })();
