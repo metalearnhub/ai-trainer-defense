@@ -212,7 +212,7 @@ textarea.in{resize:vertical}
 .tright .clockcard>div:first-child{display:none}
 .side{position:relative}
 .sidecollapse{position:absolute;top:12px;right:8px}
-.app.noside{grid-template-columns:0 minmax(0,1fr)}
+.app.noside{grid-template-columns:minmax(0,1fr)}
 .app.noside .side{display:none}
 .sideopen{position:fixed;left:6px;top:10px;z-index:30}
 .app.noside .tcenter{padding-left:44px}
