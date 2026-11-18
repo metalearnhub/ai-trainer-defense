@@ -551,12 +551,12 @@ function flowChart(){
   '<g fill="none" stroke="'+E+'" stroke-width="1.25"><path d="M250 136V162" marker-end="url(#fc-arrow)"/><path d="M360 196H430" marker-end="url(#fc-arrow)"/><path d="M250 230V266" marker-end="url(#fc-arrow)"/><path d="M360 300H430" marker-end="url(#fc-arrow)"/><path d="M250 334V370" marker-end="url(#fc-arrow)"/><path d="M250 426V452" marker-end="url(#fc-arrow)"/><path d="M360 486H430" marker-end="url(#fc-arrow)"/><path d="M250 520V546" marker-end="url(#fc-arrow)"/><path d="M360 590H430" marker-end="url(#fc-arrow)"/><path d="M250 634V660" marker-end="url(#fc-arrow)"/><path d="M360 694H430" marker-end="url(#fc-arrow)"/><path d="M140 694H60V398H120" marker-end="url(#fc-arrow)"/></g>'+
   box(250,80,260,56)+tx(250,104,'Claim the task',{w:600})+tx(250,122,'Check the app average first',{s:11.5,c:Q})+
   dia(250,196,110,34)+tx(250,200,'Reach the app avg?')+
-  box(575,168,290,56,B)+tx(575,192,'Release before 2:00',{w:600})+tx(575,210,'Ideally by 0:30 · no rating or tags',{s:11.5})+
+  box(575,168,290,56,B)+tx(575,192,'Release before 2:00',{w:600})+tx(575,210,'e.g. stuck under 5 · ideally by 0:30',{s:11.5})+
   dia(250,300,110,34)+tx(250,304,'Still workable?')+
   box(575,272,290,56,B)+tx(575,296,'Release the task',{w:600})+tx(575,314,'Environment broken or unusable',{s:11.5})+
   box(250,370,260,56)+tx(250,394,'Test and file findings',{w:600})+tx(250,412,'Goal 30 · target = app average',{s:11.5,c:Q})+
   dia(250,486,110,34)+tx(250,490,'2:00 · 5+ found?')+
-  box(575,450,290,72,W)+tx(575,474,'Start the MFR workflow',{w:600})+tx(575,490,'Under 5: document and release',{s:11.5})+tx(575,506,'No average and 5–9: follow it',{s:11.5})+
+  box(575,450,290,72,W)+tx(575,474,'Under 5 at 2:00: MFR and release',{w:600})+tx(575,490,'Document your progress, then release',{s:11.5})+tx(575,506,'No average and 5–9: MFR, follow it',{s:11.5})+
   dia(250,590,110,44)+tx(250,586,'App average or')+tx(250,602,'30+ reached?')+
   box(575,554,290,72,G)+tx(575,578,'Submit in Feather',{w:600})+tx(575,594,'Directly, no MFR · push to 30',{s:11.5})+tx(575,610,'if time allows · before 4:30',{s:11.5})+
   dia(250,694,110,34)+tx(250,698,'Reached 4:30?')+
