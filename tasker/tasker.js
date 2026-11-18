@@ -41,7 +41,9 @@ function resume(t){if(!t.clock.at)t.clock.at=Date.now()}
 
 /* ---------- counts & rules (CheckSet guidelines, Nov 2026) ---------- */
 function counts(t){var f=t.findings||[],d=f.filter(function(x){return x.status==='done'});var pre=t.pre||{};return{n:d.length+(+pre.l||0),b:d.filter(function(x){return x.type==='bug'}).length+(+pre.b||0),fr:d.filter(function(x){return x.type==='fr'}).length+(+pre.r||0),prog:f.filter(function(x){return x.status==='progress'}).length,draft:f.filter(function(x){return x.status==='draft'}).length+Math.max(0,(+pre.f||0)-(+pre.l||0)),all:f.length+Math.max(+pre.f||0,+pre.l||0),tracked:f.length}}
-function planFound(m){return Math.min(30,30*m/255)}
+function planFound(m,T){T=T||30;return Math.min(T,T*m/255)}
+function hasAvg(t){return!!(t&&t.avg>0)}
+function tgt(t){return hasAvg(t)?Math.min(30,t.avg):30}
 function planFloor(m){return Math.min(20,20*m/255)}
 function planLogged(m){return m<=30?0:Math.min(30,30*(m-30)/225)}
 function lastActAgoMin(t){var e=elapsed(t),xs=[];(t.findings||[]).forEach(function(x){xs.push(x.at||0);if(x.doneAt!=null)xs.push(x.doneAt)});if(!xs.length)return e/60;return(e-Math.max.apply(null,xs))/60}
@@ -67,7 +69,7 @@ function metrics(t){
   var cap=avgCap||4,lg=avgLog||6,left=Math.max(0,255-e),needLog=Math.max(0,30-c.n),needFind=Math.max(0,30-c.all),queue=c.all-c.n;
   var capNeed=needFind*cap,logBudget=needLog?(left-capNeed)/needLog:0;
   var proj=c.n+Math.min(queue,left/lg)+Math.max(0,left-queue*lg)/(lg+cap);
-  return{e:e,c:c,avgCap:avgCap,avgLog:avgLog,cap:cap,lg:lg,left:left,needLog:needLog,needFind:needFind,queue:queue,logBudget:logBudget,target:Math.max(1.5,logBudget),proj:Math.floor(proj),feasible:logBudget>=1.5,pf:planFound(e),pfl:planFloor(e),pl:planLogged(e)}
+  return{e:e,c:c,avgCap:avgCap,avgLog:avgLog,cap:cap,lg:lg,left:left,needLog:needLog,needFind:needFind,queue:queue,logBudget:logBudget,target:Math.max(1.5,logBudget),proj:Math.floor(proj),feasible:logBudget>=1.5,pf:planFound(e,tgt(t)),pfl:planFloor(e),pl:planLogged(e)}
 }
 function oldestProg(t){var ps=(t.findings||[]).filter(function(x){return x.status==='progress'&&!x.block});ps.sort(function(a,b){return(a.startAt||0)-(b.startAt||0)});return ps[0]||null}
 function first(f){return String(f.text||'').split('\n')[0].slice(0,60)||'(untitled)'}
@@ -91,41 +93,42 @@ function nextStep(t){
   if(t.status==='rework'){var fx=(t.findings||[]).filter(function(x){return x.fix}),lf=fx.filter(function(x){return x.fix==='todo'}).length;return{tone:'warn',h:fx.length?(lf?'Rework · '+lf+' of '+fx.length+' still to fix':'Rework · all '+fx.length+' fixed · resubmit'):'Rework · flag the items to fix',p:'Mark each item the reviewer named with Needs fix (Done list), correct it in Feather and Flow, then mark it Fixed. When all are fixed, resubmit and click Corrections done · resubmitted. Corrections are task work: keep Hubstaff running.'}}
   if(t.status==='mfr')return{tone:'warn',h:'MFR submitted · awaiting review',p:'Keep this task In Progress in Feather. You may claim ONE new task from a different app while you wait. Reviews usually take under 12 hours (automatic FLOW-AI approval can come within a minute). No reply after 12 hours? Contact your pod leads. Approved → submit the task as-is in Feather; reviewers still judge each finding.'};
   if(ok)return{tone:'ok',h:'Ready to submit',p:'Complete the Runtime Quality assessment, run final checks, then submit in Feather.'};
+  if(hasAvg(t)&&n>=tgt(t))return{tone:'ok',h:'App average reached ('+n+'/'+tgt(t)+') · submit directly',p:'No MFR needed. The goal is still 30: keep going if time allows, then Runtime Quality, final checks and submit within 4:30.'};
+  if(e>=AHT&&hasAvg(t))return{tone:'crit',h:'4:30 · below the app average ('+n+'/'+tgt(t)+') · run the MFR',p:'Run the Slack MFR workflow with the areas you tested and the environment\'s limitations. Keep Hubstaff running while you finish; a small overage is fine.'};
   if(e>=AHT)return F>=10?{tone:'crit',h:'4:30 · stop hunting, run the MFR workflow',p:'You have '+F+' found ('+n+' logged). Run the Slack MFR workflow with the areas you tested and the environment\'s limitations. Keep Hubstaff running for everything you still do (logging, Flow, the MFR); never pause it to stay under 4:30. A small overage is fine. Expect to go significantly over? Flag your HDM, say what\'s taking longer, ask what to prioritize.'}:{tone:'crit',h:'4:30 · under 10: start the MFR workflow',p:'Never a standard submission under 10. Start the MFR workflow in Slack. '+MFR_DOC+' Keep Hubstaff running for everything you still do (logging, Flow, the MFR); never pause it to stay under 4:30. A small overage is fine. Expect to go significantly over? Flag your HDM, say what\'s taking longer, ask what to prioritize.'};
   if(n>=30)return{tone:'warn',h:'30 logged but the mix is short',p:'You need '+(c.b<5?(5-c.b)+' more Bug'+(5-c.b>1?'s':''):'')+(c.b<5&&c.fr<5?' and ':'')+(c.fr<5?(5-c.fr)+' more FR'+(5-c.fr>1?'s':''):'')+'. If you can\'t find them, run the MFR workflow and pick "30+ — Bug/FR mismatch only".'};
   if(e>=255)return{tone:'warn',h:'Wrap up · '+mmss((AHT-e)*60)+' to 4:30',p:F>=30?'Log the rest and submit.':F>=10?'Finish what\'s in progress, then prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC};
   if(e>=120&&F<5)return{tone:'crit',h:'Under 5 at 2:00 · start the MFR workflow',p:'Document your progress in the MFR workflow and release the task. Releasing a thin environment is the right call.'};
-  if(e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
+  if(!hasAvg(t)&&e>=120&&F<10&&!t.mfrRun)return{tone:'warn',h:F+' found at 2:00 · start the MFR workflow',p:'With 5–9, start the MFR workflow and follow its outcome: keep working, or submit the MFR. Mark below when you\'ve run it.'};
   if(triOn()&&e<45&&!t.huntDone)return{tone:'info',h:'Triage window · '+mmss((45-e)*60)+' left to decide',p:'Test freely. Won\'t boot, crashes or unstable → tell your HDM in the POD thread and unclaim. Low-yield runtime (boots, but high-fidelity clone with low defect density or limited workflow coverage, so it clearly can\'t yield 20+ findings) → unclaim/release too. Before 0:45, no rating or tags.'};
-  var pf=planFound(e),pfl=planFloor(e);
-  if(F>=pf-1)return{tone:'ok',h:'On pace for 30+',p:'Found '+F+' (30-pace at this time: '+Math.round(pf)+') · logged '+n+'.'};
+  var T=tgt(t),pf=planFound(e,T),pfl=planFloor(e);
+  if(hasAvg(t)&&e>=60&&e<120&&F<pf-1)return{tone:'warn',h:'Behind pace for the app average ('+F+' vs '+Math.round(pf)+') · release window closes at 2:00',p:'If you can\'t reach the app\'s average ('+T+'), release the task before 2:00, ideally early. The MFR can\'t be submitted before 2:00. Think you can still make it? Switch to an untested workflow.'};
+  if(F>=pf-1)return{tone:'ok',h:'On pace for '+(T<30?T+' (app average)':'30+'),p:'Found '+F+' (pace for '+T+' at this time: '+Math.round(pf)+') · logged '+n+'.'};
   if(F>=pfl-1)return{tone:'warn',h:'Behind 30 pace by '+Math.round(pf-F),p:'Found '+F+', 30-pace is '+Math.round(pf)+'. Standard work is 30+ inside AHT; under 30 only goes in through the MFR workflow. Switch to an untested workflow.'};
   return{tone:'warn',h:'Well behind 30 pace ('+F+' vs '+Math.round(pf)+')',p:'Switch workflows, or start the Slack MFR workflow if the app has run out. There is no penalty for starting it.'};
 }
 var GATES=[
-  {id:'g35',m:35,t:'0:35',l:'10 min left · unstable or can\'t reach 20+? unclaim'},
-  {id:'g45',m:45,t:'0:45',l:'Triage window closes · keep or release'},
-  {id:'g110',m:110,t:'1:50',l:'10 min to the 2:00 checkpoint'},
-  {id:'g120',m:120,t:'2:00',l:'MFR checkpoint · under 5 / 5–9'},
-  {id:'g240',m:240,t:'4:00',l:'30 min left · check the mix'},
+  {id:'g30',m:30,t:'0:30',l:'Release check · can it reach the app average?'},
+  {id:'g110',m:110,t:'1:50',l:'10 min left to release without an MFR'},
+  {id:'g120',m:120,t:'2:00',l:'Release window closes · under 5 → MFR and release'},
+  {id:'g240',m:240,t:'4:00',l:'30 min left · average reached? check the mix'},
   {id:'g255',m:255,t:'4:15',l:'Wrap up · Runtime Quality'},
   {id:'g265',m:265,t:'4:25',l:'5 min to 4:30'},
-  {id:'g270',m:270,t:'4:30',l:'Stop hunting · under 30 → MFR · Hubstaff stays on'}
+  {id:'g270',m:270,t:'4:30',l:'Stop hunting · below average (or no average, under 30) → MFR'}
 ];
-function triOn(){return!!(IDX&&IDX.settings&&IDX.settings.triage)}
+function triOn(){return false}
 function gatesNow(){return triOn()?GATES:GATES.filter(function(g){return g.id!=='g35'&&g.id!=='g45'})}
 var STAGES_NOTRI=null;function stagesNow(){if(triOn())return STAGES;if(!STAGES_NOTRI){var h=STAGES[1];STAGES_NOTRI=[{id:'hunt',a:0,b:h.b,n:h.n,d:h.d}].concat(STAGES.slice(2))}return STAGES_NOTRI}
 
 function gateMessage(t,g){
-  var c=counts(t),n=c.all,tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs)';
-  if(g.id==='g35')return'10 minutes left in the 45-minute triage window. Unstable or broken, or is it a low-yield runtime that won\'t yield 20+ findings (high-fidelity clone, low defect density, limited workflow coverage)? Unclaim before 0:45. No rating or tags.'+tail;
-  if(g.id==='g45')return'0:45: triage window closes. Broken, unstable or clearly short of 20+? Release now. Otherwise commit and keep going toward 30+.'+tail;
-  if(g.id==='g110')return n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.'+tail:'You need 5 by 2:00, or the MFR workflow starts. Push on the main workflows now.'+tail;
-  if(g.id==='g120')return n<5?'Under 5: start the MFR workflow, document your progress and release.'+tail:n<10?'5–9: start the MFR workflow and follow its outcome.'+tail:'Checkpoint clear. Keep building toward 30+.'+tail;
-  if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':'Last half hour. Push for 30+ and check the Bug/FR mix; if you\'ll land under 30, get the MFR workflow ready. Expect to go significantly over 4:30? Flag your HDM now.')+tail;
-  if(g.id==='g255')return(n>=30?'Stop hunting. Runtime Quality, final checks, submit.':n>=10?'Stop hunting. Prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC)+tail;
-  if(g.id==='g265')return(n>=30?'Submit now.':'5 minutes left. Get the '+'MFR workflow'+' ready.')+tail;
-  if(g.id==='g270')return(n>=10?'Stop hunting. Run the Slack MFR workflow with tested areas and limitations. Keep Hubstaff on while you finish; never pause it to stay under 4:30.':'Stop hunting. Under 10: start the MFR workflow. Keep Hubstaff on while you finish.')+tail;
+  var c=counts(t),n=c.all,T=tgt(t),A=hasAvg(t),tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs'+(A?' · app average '+T:'')+')';
+  if(g.id==='g30')return'0:30 is the ideal time to decide. Can this app reach '+(A?'its average of '+T:'a workable number of findings')+'? If clearly not (broken, unstable, too few workflows), release it now. No rating or tags.'+tail;
+  if(g.id==='g110')return(A?'10 minutes left of the 2-hour release window. If you can\'t reach the app\'s average ('+T+'), release before 2:00. The MFR can\'t be submitted before 2:00.':n>=5?'You\'re past 5, so the 2:00 checkpoint is clear. Keep building.':'You need 5 by 2:00, or it\'s MFR and release. Push on the main workflows now.')+tail;
+  if(g.id==='g120')return(n<5?'Under 5 at 2:00: run the MFR workflow, document your progress and release.':A?'Release window closed. Keep building toward '+T+' (goal 30).':n<10?'5–9: start the MFR workflow and follow its outcome.':'Checkpoint clear. Keep building toward 30+.')+tail;
+  if(g.id==='g240')return(n>=30?'30 found. Check you have 5+ Bugs and 5+ FRs.':A&&n>=T?'App average reached. Submit when ready, or push toward 30 before 4:30.':'Last half hour. '+(A?'Push for the app average ('+T+').':'Push for 30+ and check the Bug/FR mix.')+' If you\'ll land short, get the MFR workflow ready. Expect to go significantly over 4:30? Flag your HDM now.')+tail;
+  if(g.id==='g255')return(n>=30||(A&&n>=T)?'Stop hunting. Runtime Quality, final checks, submit directly.':n>=10?'Stop hunting. Prepare the MFR workflow: tested areas and limitations.':'Under 10: prepare the MFR workflow. '+MFR_DOC)+tail;
+  if(g.id==='g265')return(n>=30||(A&&n>=T)?'Submit now.':'5 minutes left. Get the MFR workflow ready.')+tail;
+  if(g.id==='g270')return(n>=30||(A&&n>=T)?'4:30. Submit directly if you haven\'t. Keep Hubstaff on while you finish.':'Stop hunting. Run the Slack MFR workflow with tested areas and limitations. Keep Hubstaff on while you finish; never pause it to stay under 4:30.')+tail;
   return nextStep(t).p;
 }
 
@@ -195,7 +198,7 @@ function sideHtml(){
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><button class="btn ghost" data-a="guide" aria-current="'+(VIEW.mode==='guide')+'" style="width:100%;justify-content:center;margin-bottom:8px">Guide · rules &amp; workflow</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="focusOn"'+(IDX.settings.full?'':' checked')+'> Focus view (simple panel)</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="triOn"'+(IDX.settings.triage?' checked':'')+'> 45-minute triage checkpoint</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="focusOn"'+(IDX.settings.full?'':' checked')+'> Focus view (simple panel)</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:35, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -204,16 +207,16 @@ function newHtml(){
   var warn=act.length>=1&&!mfr.length?'<div class="banner">You already have an active task. Standard is 1 at a time; a second is allowed only while the first waits on an MFR or HDM review. New experts: 1 only.</div>':act.length+mfr.length>=2?'<div class="banner">You have 2 tasks open. That is the max, and only while one waits on an MFR or HDM review.</div>':mfr.length?'<div class="banner">'+esc(mfr[0].app)+' is waiting on its MFR. You may claim ONE new task, from a different app.</div>':'';
   return'<div class="row"><button class="btn sm mobtoggle" data-a="menu">Tasks</button></div><form class="card form" id="newForm" autocomplete="off"><h1 style="margin:0;font-size:22px">New task</h1>'+warn+
   '<label for="nApp">App name<input class="in" id="nApp" list="appList" placeholder="e.g. Salesforce clone" required><datalist id="appList">'+Object.keys(apps).map(function(a){return'<option value="'+esc(a)+'">'}).join('')+'</datalist><span class="hint" id="nAppHint">Same name as before lets the app check your past findings for duplicates.</span></label>'+
-  '<label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
+  '<label for="nAvg">App average from the expert dashboard<input class="in mono" id="nAvg" type="number" min="1" max="30" placeholder="e.g. 15" style="max-width:160px"><span class="hint">Look the app up before you claim. Reach this number within 4:30 and you submit directly, no MFR (the goal is still 30). Leave it empty if the dashboard says "Contact your HDM": then under 30 goes through the MFR.</span></label><label for="nUrl">Feather link<input class="in mono" id="nUrl" placeholder="https://…/tasks/625cc481-e437-496e-8393-1ff6a0fe5970"><span class="hint" id="nUrlHint">The task ID after /tasks/ is pulled out for you.</span></label>'+
   '<label for="nTime">Hubstaff total for today, right now (optional)<input class="in mono" id="nTime" placeholder="1:03:50" style="max-width:160px" inputmode="numeric"><span class="hint">Hubstaff counts your whole day, so this is not the task\'s time. The task clock starts at 0:00; this number is only a reference point, so later syncs add just the time Hubstaff gains while this task runs.</span></label>'+
   '<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nRun" checked> Hubstaff is running now</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nAdd"> Additional task (partly done by a former expert)</label>'+'<label class="row" style="flex-direction:row;font-weight:500"><input type="checkbox" id="nLate" data-a="lateToggle"> I already started this task (forgot to log it here)</label>'+'<fieldset class="late" id="lateBox" hidden><legend class="lab">Work done before tracking</legend><label for="nSpent">Time already spent on this task<input class="in mono" id="nSpent" placeholder="0:20:00" style="max-width:160px" inputmode="numeric"><span class="hint">Your best estimate. The task clock starts here.</span></label><p class="hint" style="margin:0">Enter the time you already spent on this task (or pick a triage option below). These counts are added to your totals; findings you add here are tracked as usual.</p><div class="lgrid"><label for="nPreF">Found so far<input class="in mono" id="nPreF" type="number" min="0" value="0"></label><label for="nPreL">Logged in Feather<input class="in mono" id="nPreL" type="number" min="0" value="0"></label><label for="nPreB">…of those, Bugs<input class="in mono" id="nPreB" type="number" min="0" value="0"></label><label for="nPreR">…of those, FRs<input class="in mono" id="nPreR" type="number" min="0" value="0"></label></div><label for="nTri">45-minute triage window<select class="in" id="nTri"><option value="">Not finished yet</option><option value="today">Finished today: Hubstaff already includes it</option><option value="earlier">Finished on an earlier day: add 0:45 to today\'s Hubstaff time</option></select><span class="hint">Worked on another day? Pick the last option so the 0:45 is counted.</span></label></fieldset>'+
   '<p class="hint err" id="nErr">'+esc(VIEW.newErr)+'</p><div class="row"><button class="btn pri" type="submit">Start task</button><button class="btn" type="button" data-a="cancelNew">Cancel</button></div></form>';
 }
 function taskHtml(t){
   var c=counts(t),s=nextStep(t),e=elapsed(t),act=t.status==='active',past=pastFor(t),key=appKey(t.app);
-  var ageD=(Date.now()-t.createdAt)/864e5,nb='';if(act&&ageD>=1)nb+='<div class="banner"><span>Claimed '+Math.floor(ageD)+' day'+(ageD>=2?'s':'')+' ago. Finish within 1–2 days; tasks held 3–4 days can be extracted automatically.</span></div>';if(t.additional&&act)nb+='<div class="banner"><span><b>Additional task.</b> Review the existing findings and reviewer feedback first, delete the flawed ones, keep the valid ones. You can\'t unclaim it yourself: open a POD ticket asking an HDM to remove it.</span></div>';if(act&&!notifyOk()&&'Notification' in window&&Notification.permission!=='denied')nb='<div class="banner"><span>Desktop reminders are off. Turn them on so Chrome alerts you at each gate.</span><button class="btn sm" data-a="notify">Turn on</button></div>';
+  var ageD=(Date.now()-t.createdAt)/864e5,nb='';if(act&&ageD>=1)nb+='<div class="banner'+(ageD>=3?' crit':'')+'"><span>Claimed '+Math.floor(ageD)+' day'+(ageD>=2?'s':'')+' ago. 1 day is ideal, 2 is OK, 3 is the maximum: on day 4 it is unclaimed automatically and moved to Additional Tasks.</span></div>';if(t.additional&&act)nb+='<div class="banner"><span><b>Additional task.</b> Treat it as an empty task: reuse existing findings that are valid, or delete everything and start fresh. Old reviewer comments are optional to read.</span></div>';if(act&&!notifyOk()&&'Notification' in window&&Notification.permission!=='denied')nb='<div class="banner"><span>Desktop reminders are off. Turn them on so Chrome alerts you at each gate.</span><button class="btn sm" data-a="notify">Turn on</button></div>';
   var head='<div class="thead"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><div class="row"><button class="btn sm mobtoggle" data-a="menu">Tasks</button><span class="pill '+OUT[t.status][1]+'">'+OUT[t.status][0]+'</span><span class="lab">Claimed '+day(t.createdAt)+'</span></div>'+
-    (VIEW.editHead?'<form class="row" id="headForm"><input class="in" id="eApp" value="'+esc(t.app)+'" aria-label="App name" style="max-width:260px"><input class="in mono" id="eUrl" value="'+esc(t.featherUrl||'')+'" placeholder="Feather link" aria-label="Feather link" style="max-width:420px"><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editHead">Cancel</button></form>':
+    (VIEW.editHead?'<form class="row" id="headForm"><input class="in" id="eApp" value="'+esc(t.app)+'" aria-label="App name" style="max-width:260px"><input class="in mono" id="eUrl" value="'+esc(t.featherUrl||'')+'" placeholder="Feather link" aria-label="Feather link" style="max-width:420px"><input class="in mono" id="eAvg" type="number" min="1" max="30" value="'+(t.avg||'')+'" placeholder="App avg" aria-label="App average" style="max-width:100px"><button class="btn sm pri" type="submit">Save</button><button class="btn sm" type="button" data-a="editHead">Cancel</button></form>':
     '<h1>'+esc(t.app||'Untitled app')+'</h1><div class="row">'+(t.featherId?'<span class="fid"><code title="Feather task ID">'+esc(t.featherId)+'</code><button class="btn sm ghost" data-a="copyId">Copy</button></span>':'<span class="muted">No Feather ID</span>')+(t.featherUrl?'<a class="btn sm" href="'+esc(t.featherUrl)+'" target="_blank" rel="noopener">Open in Feather ↗</a>':'')+'<button class="btn sm ghost" data-a="editHead">Edit</button></div>')+
     '</div><div class="row">'+(act?'<button class="btn sm" data-a="end" data-s="submitted"'+(c.n>=30?'':' title="Usually after 30 findings with 5 Bugs and 5 FRs"')+'>Mark submitted</button><button class="btn sm" data-a="end" data-s="mfr">MFR submitted</button><button class="btn sm" data-a="end" data-s="outdated" title="Task went Outdated: submit it right away">Outdated · submitted</button><button class="btn sm danger" data-a="end" data-s="unclaimed">'+(t.additional?'Removed by HDM':'Unclaimed / released')+'</button>'+(elapsed(t)>=120*60&&counts(t).all<10&&!t.mfrRun?'<button class="btn sm" data-a="mfrRun">I ran the MFR workflow</button>':''):t.status==='mfr'?'<button class="btn sm pri" data-a="end" data-s="submitted">Approved · submitted as-is</button><button class="btn sm" data-a="end" data-s="rework">Corrections requested</button><button class="btn sm" data-a="end" data-s="active">HDM: keep working</button><button class="btn sm" data-a="end" data-s="released">HDM closed it</button>':t.status==='rework'?'<button class="btn sm pri" data-a="end" data-s="resubmit">Corrections done · resubmitted</button><button class="btn sm" data-a="end" data-s="submitted">Approved · submitted</button>':(t.status==='submitted'?'<button class="btn sm" data-a="end" data-s="rework">Sent back for rework</button>':'')+'<button class="btn sm" data-a="end" data-s="active">Reopen</button>')+'<button class="btn sm" data-a="breakdown">Time breakdown</button>'+(VIEW.confirmDel===t.id?'<button class="btn sm danger" data-a="delTask">Confirm delete task</button>':'<button class="btn sm ghost danger" data-a="delTask">Delete</button>')+'</div></div>';
   var tk=[0,45,120,270];
@@ -368,7 +371,7 @@ document.addEventListener('submit',function(ev){
     var mfrSame=allTasks().find(function(x){return x.status==='mfr'&&appKey(x.app)===appKey(app)});if(mfrSame){$('#nErr').textContent='Your task waiting on the MFR is on '+mfrSame.app+'. The extra task while you wait must be from a different app.';return}
     var ex=fid&&allTasks().find(function(x){return x.featherId===fid});
     if(ex){$('#nErr').innerHTML='This Feather task is already logged. <button class="btn sm" type="button" data-a="open" data-id="'+ex.id+'">Open it</button>';return}
-    var nt={id:uid(),app:app,featherUrl:url,featherId:fid,createdAt:Date.now(),status:'active',clock:{base:sec,at:$('#nRun').checked?Date.now():null},clockU:Date.now(),findings:[],notes:'',fired:{},trackFrom:sec,additional:$('#nAdd').checked||undefined,pre:pre||undefined,huntDone:hunt45?true:undefined,huntAt:hunt45?45*60:undefined,offset:off||undefined,hub:hub!=null?{h:hub,e:sec,cont:$('#nRun').checked}:undefined};
+    var nt={id:uid(),app:app,featherUrl:url,featherId:fid,createdAt:Date.now(),status:'active',clock:{base:sec,at:$('#nRun').checked?Date.now():null},clockU:Date.now(),findings:[],notes:'',fired:{},trackFrom:sec,additional:$('#nAdd').checked||undefined,pre:pre||undefined,huntDone:hunt45?true:undefined,huntAt:hunt45?45*60:undefined,offset:off||undefined,avg:(function(){var v=parseInt(($('#nAvg')||{}).value,10);return v>0?Math.min(30,v):undefined})(),hub:hub!=null?{h:hub,e:sec,cont:$('#nRun').checked}:undefined};
     markPastGates(nt);TASKS[nt.id]=nt;IDX.ids.push(nt.id);IDX.cur=nt.id;saveIdx();saveTask(nt);VIEW.mode='task';VIEW.filter='all';
     try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
     render();var ai=$('#addIn');if(ai)ai.focus();
@@ -383,7 +386,7 @@ document.addEventListener('submit',function(ev){
     else{var A=t.hub;if(A&&A.cont!==false&&running(t)&&H>=A.h){var ne=A.e+(H-A.h);setElapsed(t,ne);msg='Task clock '+hms(ne)+' (Hubstaff added '+hm(H-A.h)+' since the last reference).'}else msg='Reference set at Hubstaff '+hms(H)+'. The task clock stays at '+hms(elapsed(t))+'; from now on syncing adds only what Hubstaff gains while this task runs.';t.hub={h:H,e:elapsed(t),cont:running(t)}}
     t.clockU=Date.now();markPastGates(t);VIEW.sync=false;saveTask(t);render();toast('Synced',msg,'ok');return}
   if(f.id==='priorForm'){var nv=parseTime($('#priorIn').value);if(nv==null){toast('Check the time','Use h:mm or h:mm:ss, for example 0:45:00.','warn');return}var old=t.offset||0;setElapsed(t,Math.max(0,elapsed(t)+nv-old));if(t.hub)t.hub.e+=nv-old;if(nv)t.offset=nv;else delete t.offset;if(elapsed(t)>=45*60&&!t.huntDone){t.huntDone=true;t.huntAt=45*60}t.clockU=Date.now();markPastGates(t);VIEW.prior=false;saveTask(t);render();toast(nv?'Earlier-day time added':'Earlier-day time removed','AHT clock now '+hms(elapsed(t))+'. Syncs to Hubstaff keep adding '+hm(nv)+'.','ok');return}
-  if(f.id==='headForm'){t.app=$('#eApp').value.trim()||t.app;t.featherUrl=$('#eUrl').value.trim();t.featherId=parseFeather(t.featherUrl);VIEW.editHead=false;saveTask(t);render();return}
+  if(f.id==='headForm'){var av=parseInt(($('#eAvg')||{}).value,10);if(av>0)t.avg=Math.min(30,av);else delete t.avg;t.app=$('#eApp').value.trim()||t.app;t.featherUrl=$('#eUrl').value.trim();t.featherId=parseFeather(t.featherUrl);VIEW.editHead=false;saveTask(t);render();return}
 });
 document.addEventListener('input',function(ev){
   if((ev.target.id==='syncIn'||ev.target.id==='syncTask'||ev.target.id==='nTime')&&!VIEW.syncT0)VIEW.syncT0=Date.now();
@@ -534,7 +537,7 @@ document.addEventListener('input',function(ev){if(ev.target.id==='libQ'){VIEW.li
 document.addEventListener('change',function(ev){if(ev.target.id==='libType'){VIEW.libType=ev.target.value;$('#libList').innerHTML=libListHtml()}if(ev.target.id==='libApp'){VIEW.libApp=ev.target.value;$('#libList').innerHTML=libListHtml()}});
 
 /* ---------- in-app guide: rules + exact workflow (read-only, opened from the sidebar) ---------- */
-var GUIDE_SRC='CheckSet Operations & Strategy Handbook (Nov 2026), Nov 9 Office Hours, and your HDM confirmations of Nov 11.';
+var GUIDE_SRC='CheckSet Operations & Strategy Handbook (Nov 2026), Office Hours of Nov 9, 12 and 16, Miguel\'s Hubstaff post, and your HDM confirmations.';
 function gTable(head,rows){return'<div class="gtable"><table><thead><tr>'+head.map(function(h){return'<th>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+rows.map(function(r){return'<tr>'+r.map(function(c){return'<td>'+c+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table></div>'}
 function gSec(id,title,body){return'<section class="gsec" id="g-'+id+'"><h2>'+title+'</h2>'+body+'</section>'}
 function flowChart(){
@@ -544,84 +547,76 @@ function flowChart(){
   var tx=function(x,y,t,o){o=o||{};return'<text x="'+x+'" y="'+y+'" text-anchor="'+(o.a||'middle')+'" font-size="'+(o.s||13)+'" font-weight="'+(o.w||400)+'" fill="'+(o.c||I)+'">'+t+'</text>'};
   var B='var(--crit)',W='var(--warn)',G='var(--ok)';
   return'<svg class="flowchart" viewBox="0 0 760 760" role="img" aria-label="Task workflow: every task ends by unclaim, release, MFR route or submit"><defs><marker id="fc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="'+E+'"/></marker></defs>'+
-  tx(24,30,'Every task ends one of four ways: unclaim, release, MFR route or submit',{a:'start',s:15,w:600})+tx(24,52,'Red leaves the task · amber goes through the MFR · green is submitted',{a:'start',s:11.5,c:Q})+
+  tx(24,30,'Every task ends one of four ways: release, MFR, submit directly or 30+',{a:'start',s:15,w:600})+tx(24,52,'Red leaves the task · amber goes through the MFR · green is submitted',{a:'start',s:11.5,c:Q})+
   '<g fill="none" stroke="'+E+'" stroke-width="1.25"><path d="M250 136V162" marker-end="url(#fc-arrow)"/><path d="M360 196H430" marker-end="url(#fc-arrow)"/><path d="M250 230V266" marker-end="url(#fc-arrow)"/><path d="M360 300H430" marker-end="url(#fc-arrow)"/><path d="M250 334V370" marker-end="url(#fc-arrow)"/><path d="M250 426V452" marker-end="url(#fc-arrow)"/><path d="M360 486H430" marker-end="url(#fc-arrow)"/><path d="M250 520V546" marker-end="url(#fc-arrow)"/><path d="M360 590H430" marker-end="url(#fc-arrow)"/><path d="M250 634V660" marker-end="url(#fc-arrow)"/><path d="M360 694H430" marker-end="url(#fc-arrow)"/><path d="M140 694H60V398H120" marker-end="url(#fc-arrow)"/></g>'+
-  box(250,80,260,56)+tx(250,104,'Claim the task',{w:600})+tx(250,122,'One task · test freely for 45 min',{s:11.5,c:Q})+
-  dia(250,196,110,34)+tx(250,200,'20+ possible by 0:45?')+
-  box(575,168,290,56,B)+tx(575,192,'Unclaim any time before 0:45',{w:600})+tx(575,210,'Unstable, broken, or low-yield runtime',{s:11.5})+
-  dia(250,300,110,34)+tx(250,304,'Usable?')+
+  box(250,80,260,56)+tx(250,104,'Claim the task',{w:600})+tx(250,122,'Check the app average first',{s:11.5,c:Q})+
+  dia(250,196,110,34)+tx(250,200,'Reach the app avg?')+
+  box(575,168,290,56,B)+tx(575,192,'Release before 2:00',{w:600})+tx(575,210,'Ideally by 0:30 · no rating or tags',{s:11.5})+
+  dia(250,300,110,34)+tx(250,304,'Still workable?')+
   box(575,272,290,56,B)+tx(575,296,'Release the task',{w:600})+tx(575,314,'Environment broken or unusable',{s:11.5})+
-  box(250,370,260,56)+tx(250,394,'Test and file findings',{w:600})+tx(250,412,'Aim for 30+ · under 30 goes via the MFR',{s:11.5,c:Q})+
-  dia(250,486,110,34)+tx(250,490,'2:00 · 10+ found?')+
-  box(575,450,290,72,W)+tx(575,474,'Start the MFR workflow',{w:600})+tx(575,490,'Under 5: document and release',{s:11.5})+tx(575,506,'5–9: follow its outcome',{s:11.5})+
-  dia(250,590,110,44)+tx(250,586,'30+ valid, 5+ Bugs,')+tx(250,602,'5+ FRs?')+
-  box(575,554,290,72,G)+tx(575,578,'Submit in Feather',{w:600})+tx(575,594,'Runtime Quality, then final checks',{s:11.5})+tx(575,610,'Before 4:30',{s:11.5})+
+  box(250,370,260,56)+tx(250,394,'Test and file findings',{w:600})+tx(250,412,'Goal 30 · target = app average',{s:11.5,c:Q})+
+  dia(250,486,110,34)+tx(250,490,'2:00 · 5+ found?')+
+  box(575,450,290,72,W)+tx(575,474,'Start the MFR workflow',{w:600})+tx(575,490,'Under 5: document and release',{s:11.5})+tx(575,506,'No average and 5–9: follow it',{s:11.5})+
+  dia(250,590,110,44)+tx(250,586,'App average or')+tx(250,602,'30+ reached?')+
+  box(575,554,290,72,G)+tx(575,578,'Submit in Feather',{w:600})+tx(575,594,'Directly, no MFR · push to 30',{s:11.5})+tx(575,610,'if time allows · before 4:30',{s:11.5})+
   dia(250,694,110,34)+tx(250,698,'Reached 4:30?')+
-  box(575,654,290,80,W)+tx(575,678,'Stop at 4:30',{w:600})+tx(575,696,'Under 30: Slack MFR workflow',{s:11.5})+tx(575,712,'with tested areas and limits',{s:11.5})+
+  box(575,654,290,80,W)+tx(575,678,'Stop at 4:30',{w:600})+tx(575,696,'Below target: MFR workflow',{s:11.5})+tx(575,712,'with tested areas and limits',{s:11.5})+
   tx(395,188,'no',{s:11.5,c:Q})+tx(258,252,'yes',{a:'start',s:11.5,c:Q})+tx(395,292,'no',{s:11.5,c:Q})+tx(258,356,'yes',{a:'start',s:11.5,c:Q})+tx(395,478,'no',{s:11.5,c:Q})+tx(258,538,'yes',{a:'start',s:11.5,c:Q})+tx(395,582,'yes',{s:11.5,c:Q})+tx(258,652,'no',{a:'start',s:11.5,c:Q})+tx(395,686,'yes',{s:11.5,c:Q})+tx(66,560,'no: keep testing',{a:'start',s:11.5,c:Q})+
   '</svg>'}
 function guideHtml(){
-  var nav=[['glance','At a glance'],['chart','Workflow chart'],['flow','Step by step'],['clock','Clock vs count'],['exits','Exits'],['rubric','Writing the rubric'],['filter','Rank and filter'],['evidence','Real-app FRs and AI'],['time','Time tracking'],['queue','Concurrency and queue'],['open','Still to confirm']];
+  var nav=[['glance','At a glance'],['chart','Workflow chart'],['flow','Step by step'],['clock','Clock vs count'],['exits','Exits'],['rubric','Writing findings'],['evidence','Evidence and real-app findings'],['filter','Rank and filter'],['time','Time tracking'],['queue','Holding time and queue']];
   return'<div class="wrap guide"><div class="card"><div class="row"><h1 style="margin:0;font-size:22px">Guide · rules and workflow</h1><span class="sp"></span><button class="btn sm ghost" data-a="guideClose">Back</button></div><p class="hint" style="margin:0">Source: '+GUIDE_SRC+' The app\'s alerts and rule checks follow exactly this.</p>'+
   '<nav class="gnav" aria-label="Guide sections">'+nav.map(function(n){return'<button class="btn sm ghost" data-a="gjump" data-g="'+n[0]+'">'+n[1]+'</button>'}).join('')+'</nav></div>'+
   gSec('glance','At a glance',gTable(['Rule','Number','What it means'],[
-    ['Standard submission','<b>30+ valid</b>, 5+ Bugs, 5+ FRs','Inside the 4:30 AHT. Runtime Quality and final checks, then submit in Feather'],
-    ['Under 30','10–29','<b>MFR only</b>: the Slack MFR workflow (same as the Minimum Findings Form), with tested areas and limitations'],
-    ['Never','Under 10','Never a standard submission. Always the MFR workflow'],
-    ['Triage window','0:00–0:45','Test freely. Unclaim or release any time if it won\'t boot, is unstable, or clearly can\'t yield 20+ findings'],
-    ['MFR checkpoint','2:00','Under 5 → MFR and release · 5–9 → MFR and follow it · 10+ → keep testing toward 30+'],
-    ['AHT ceiling','4:30','Stop. Under 30 → Slack MFR workflow'],
-    ['Unsure','Any time','Start the MFR workflow first. Zero penalty for starting it']]))+
-  gSec('chart','Workflow chart','<div class="fcwrap">'+flowChart()+'</div><p class="hint">Follow the arrows from the top. Until you reach 30+ or 4:30, you loop back to testing.</p>')+
+    ['Goal','<b>30</b> valid findings','Always aim for 30 inside the 4:30 AHT'],
+    ['App average','From the expert dashboard','Look the app up before you claim. Reach its average within 4:30 → <b>submit directly, no MFR</b>'],
+    ['No average','"Contact your HDM"','New apps without enough data: under 30 goes through the <b>MFR</b>'],
+    ['Release window','0:00–2:00 (ideally by 0:30)','Can\'t reach even the app\'s average? Release it, no penalty, no rating or tags'],
+    ['2:00 checkpoint','Under 5','MFR, document your progress, release. The MFR can\'t be submitted before 2:00'],
+    ['AHT','4:30','Stop hunting. Below the average (or no average and under 30) → MFR'],
+    ['Holding time','1 day ideal · 3 max','Day 4: auto-unclaimed into Additional Tasks'],
+    ['Unsure','Any time','Ask your HDM or start the MFR workflow. Keep Hubstaff on']]))+
+  gSec('chart','Workflow chart','<div class="fcwrap">'+flowChart()+'</div><p class="hint">Follow the arrows from the top. Until you reach the target or 4:30, you loop back to testing.</p>')+
   gSec('flow','The workflow, step by step','<ol class="gsteps">'+[
-    ['Claim','One active task. Start Hubstaff, then New task here: paste the Feather link and match the clock to Hubstaff.'],
-    ['0:00–0:45 · Triage','Use the whole 45 minutes. Test the app end to end and capture drafts. <b>Broken</b> (won\'t launch, crashes, unstable): tell your HDM in the POD thread and unclaim in Feather. <b>Low-yield runtime</b> (boots, but clearly can\'t reach 20+ valid findings: a high-fidelity clone with low defect density, or limited workflow coverage): unclaim or release. No rating, scores or do_not_recommend tag.'],
-    ['0:45 · Commit','Window closes. Broken or unusable → release now. Otherwise commit and hunt.'],
-    ['Hunt and log','Each finding: draft → In progress (write the rubric, run Flow, log in Feather) → Done (paste the rubric you filed). About 7 an hour reaches 30 by 4:15.'],
-    ['2:00 · MFR checkpoint','Under 5 → run the Slack MFR workflow, document, release. 5–9 → run it and follow its answer. 10+ → keep going.'],
-    ['Build to 30+','Edge cases, failed attempts, cross-view state, full journeys, real-app comparisons. Keep the Bug/FR mix at 5+ each.'],
+    ['Before claiming','Look up the app on the expert dashboard (log in with your micro1 email). Note its average, or "Contact your HDM". Start with easier apps.'],
+    ['Claim','One active task. Start Hubstaff, then New task here: paste the Feather link and enter the app average.'],
+    ['By 0:30 · Release check','Explore the main workflows. Broken, unstable, or clearly can\'t reach the app\'s average? Release it now (tell your HDM if it\'s broken). No rating, scores or tags.'],
+    ['Up to 2:00 · Release window','Still struggling and you can\'t reach the average? Release before 2:00. The MFR can\'t be submitted earlier.'],
+    ['Hunt and log','Each finding: draft → In progress (write it, run Flow, log in Feather) → Done (paste the rubric you filed).'],
+    ['2:00 · Checkpoint','Under 5 → MFR, document, release. Otherwise keep building.'],
+    ['Average reached','Submit directly when ready, no MFR. If time allows, keep going toward 30.'],
     ['4:15 · Wrap','Stop hunting. Runtime Quality and final checks.'],
-    ['4:30 · Stop hunting','30+ → submit. Under 30 → Slack MFR workflow with tested areas and limitations. Keep Hubstaff on for everything you still do; a small overage is fine.']].map(function(s){return'<li><b>'+s[0]+'</b><span>'+s[1]+'</span></li>'}).join('')+'</ol>')+
+    ['4:30 · Stop hunting','Target reached → submit. Below it → Slack MFR workflow with tested areas and limitations. Keep Hubstaff on for everything you still do.']].map(function(s){return'<li><b>'+s[0]+'</b><span>'+s[1]+'</span></li>'}).join('')+'</ol>')+
   gSec('clock','Clock vs count',gTable(['Hubstaff time','Your count or state','Action','Where'],[
-    ['0:00–0:45','Won\'t boot, crashes, unstable','Tell your HDM, unclaim. No rating or tags','POD thread, Feather'],
-    ['0:00–0:45','Low-yield runtime: high-fidelity clone, low defect density or limited workflow coverage; can\'t yield 20+','Unclaim or release','Feather'],
-    ['2:00','Under 5','MFR workflow, document progress, release','Slack'],
-    ['2:00','5–9','MFR workflow, follow its outcome: keep working or submit the MFR','Slack'],
-    ['2:00','10+ and still finding','Keep testing toward 30+','—'],
+    ['0:00–0:30','Broken or unstable','Tell your HDM, release. No rating or tags','POD thread, Feather'],
+    ['0:00–2:00','Can\'t reach the app\'s average','Release (ideally by 0:30)','Feather'],
+    ['2:00','Under 5','MFR, document progress, release','Slack'],
+    ['2:00','No average listed, 5–9','MFR workflow, follow its outcome','Slack'],
+    ['Any time','App average reached','Submit directly (no MFR); push toward 30 if time allows','Feather'],
     ['Up to 4:30','30+ with 5+ Bugs and 5+ FRs','Runtime Quality, final checks, submit','Feather'],
-    ['Any time','30+ but short of 5 Bugs or 5 FRs','MFR workflow, bucket "30+ — Bug/FR mismatch only"','Slack'],
-    ['After MFR approval','Any count 10+','Submit as-is in Feather','Feather'],
-    ['4:30','Under 30','Stop hunting, run the MFR workflow: tested areas and limitations. Hubstaff stays on while you finish','Slack'],
-    ['Before 4:30','Expect to go significantly over','Flag your HDM early: what is taking longer, what to prioritize. Keep tracking','POD thread'],
-    ['Any time','Task shows Outdated','Submit it now, no extra review','Feather'],
-    ['Any time','Unsure','Start the MFR workflow first','Slack']])+'<p class="hint">Every MFR includes your finding count, the Bug/FR split, the workflows you tested, and what you tried and why you couldn\'t find more.</p>')+
+    ['4:30','Below the average, or no average and under 30','Stop hunting, run the MFR workflow. Hubstaff stays on','Slack'],
+    ['Before 4:30','Expect to go significantly over','Flag your HDM early. Keep tracking','POD thread'],
+    ['Any time','Task shows Outdated','Submit it now, no extra review','Feather']])+'<p class="hint">Every MFR includes your finding count, the Bug/FR split, the workflows you tested, and what you tried and why you couldn\'t find more.</p>')+
   gSec('exits','Exits and special cases',
-    '<h3>Unclaim or release (0:00–0:45)</h3><p>Broken runtime: tell your HDM in the POD thread, then unclaim in Feather. Low-yield runtime (high-fidelity clone with low defect density, or limited workflow coverage): unclaim or release inside the window. Never rate runtime quality, fill scores or add do_not_recommend tags.</p>'+
-    '<h3>MFR workflow (Slack)</h3><ol><li>In #titan-nexus-commercial-team, Start Workflow → <b>Checkset Minimum Findings Request</b>.</li><li><b>MFR eligibility</b>: pick your findings bucket: Under 5 · 5–14 · 15–19 · 20–29 · 30+ (Bug/FR mismatch only, when you have 30 but not 5 Bugs and 5 FRs).</li><li>The MFR bot messages you. Follow its questions until you qualify; the outcome is Keep working or Submit MFR.</li><li><b>Keep working</b>: continue, and run a new request if count or time moves without reaching 30.</li><li><b>Submit MFR</b>: you get "MFR submitted — awaiting review". Keep the task In Progress in Feather. You may claim ONE new task from a different app. Reviews usually take under 12 hours; no reply after 12 hours → contact your pod leads.</li><li><b>Corrections requested</b>: the reviewer or HDM asks you to fix items before approval. Fix them, resubmit, and wait again. In this app: Corrections requested → flag each item with Needs fix → Mark fixed → Corrections done · resubmitted. Keep Hubstaff on while correcting.</li><li><b>Approved</b> (by your HDM, or automatically by FLOW-AI Approval, sometimes within a minute): "You may submit the task as-is with N of 30". Submit it in Feather. In this app, click Approved · submitted as-is.</li></ol><p class="hint">Use the bot, not channel posts or DMs. Approval only permits early submission; reviewers still decide whether each finding is valid. Once approved, you never need a second MFR for that task.</p>'+
+    '<h3>Release (0:00–2:00)</h3><p>Broken runtime: tell your HDM in the POD thread, then release in Feather. Can\'t reach the app\'s average: release, ideally in the first 30 minutes and at the latest before 2:00. Never rate runtime quality, fill scores or add do_not_recommend tags.</p>'+
+    '<h3>Submit directly (app average reached)</h3><p>Reach the app\'s average within 4:30 and submit, no MFR. The goal is still 30.</p>'+
+    '<h3>MFR workflow (Slack) · only when needed</h3><ol><li>Use it when the app has no average ("Contact your HDM") and you\'re under 30, when you\'re below the average at 4:30, or under 5 at 2:00. It can\'t be submitted before 2:00.</li><li>In #titan-nexus-commercial-team, Start Workflow → <b>Checkset Minimum Findings Request</b>; pick your findings bucket.</li><li>The MFR bot messages you. Answer until you qualify: Keep working or Submit MFR.</li><li><b>Submit MFR</b>: keep the task In Progress in Feather. You may claim ONE new task from a different app. No reply after 12 hours → contact your pod leads.</li><li><b>Corrections requested</b>: fix the items and resubmit. <b>Approved</b>: submit as-is in Feather.</li></ol><p class="hint">The MFR is moving to the new expert platform this week (fully by Friday, Nov 20). Follow the announcements for the final steps.</p>'+
     '<h3>Normal submission (30+)</h3><p>30+ valid, at least 5 Bugs and 5 FRs. Runtime Quality, final checks, submit in Feather before 4:30.</p>'+
     '<h3>Outdated</h3><p>If the status changes to Outdated while you work, submit immediately.</p>'+
-    '<h3>Task opened from the instructions page already shows findings</h3><p>Some instruction links open a task that was completed in the past. If you opened it from the instructions page, treat it as a brand-new task (Nov 12 Office Hours). This is not an Additional task.</p><h3>Additional tasks</h3><p>Don\'t start from scratch: review existing findings and reviewer feedback, delete the flawed ones, keep the valid ones. You can\'t unclaim these yourself; open a POD ticket asking an HDM to remove it.</p>')+
-  gSec('rubric','Writing the rubric',gTable(['Field','Rule'],[
-    ['Summary','Page or section, then a colon. Bug: <code>Page: Component failure when trigger</code>. FR: <code>Page: Capability should …</code>. No "Bug", "FR" or "P1" prefix'],
-    ['Priority','P0 core task blocked · P1 core support or severe UX · P2 everything else. Rank by impact, never by looks'],
-    ['Issue Type','Bug: implemented but broken. FR: missing compared with the real app. Works as intended: neither'],
-    ['Page or Workflow','<code>Tab -> Group -> Object -> Workflow</code>'],
-    ['Reproduction Steps','Start by opening the app, number 1, 2, 3, plain English. FR: always N/A'],
-    ['Expected Behavior','The [control] on [location] should [action], allowing the user to [outcome]. Always "the user"'],
-    ['Actual Behavior','Four parts: defect, baseline (how a working control behaves), plain why, impact on the user']])+
-    '<p class="hint">Examples: <code>Channels: Create New button opens a blank page when clicked.</code> · <code>Documents: Comment option should allow reviewers to attach feedback to selected items.</code> Never write "I tested", "I verified", "Testing shows" or "As a user, I want".</p>')+
-  gSec('filter','Rank and filter (Unnecessary Issues)','<ul><li><b>External website</b>: broke after leaving the app\'s domain → skip.</li><li><b>Says unavailable</b> (⊘, "Not implemented", "Coming soon") → out, unless P0/P1: then report and justify the impact in Expected and Actual.</li><li><b>Missing prerequisite</b>: disabled until you select, set up or get permission → do the prerequisite and retest.</li><li><b>Known limitation</b>: already in the release notes → skip.</li></ul>')+
-  gSec('evidence','Real-app FRs, evidence and AI use',gTable(['Rule','What to do'],[
-    ['No cap on real-app FRs','Report as many as the comparison supports'],
-    ['Not 100% of findings','Runtime bugs still come from direct testing in the clone'],
-    ['Evidence for every real-app FR','Screenshots labelled Expected Behavior (real app) and Actual Behavior (clone), plus a side-by-side video'],
-    ['Real app paywalled','Ask in your POD thread whether other documentation is allowed'],
-    ['P0/P1 and real-app FRs','Write out the user impact in full'],
-    ['AI allowed','Polishing sentence structure, spelling and formatting'],
-    ['AI never allowed','Generating findings, inventing clone behaviour, faking screenshots or recordings']]))+
-  gSec('time','Time tracking (Hubstaff policy)','<ul><li><b>Working = Hubstaff running.</b> Never pause it just to stay under the 4:30 AHT. All task work is tracked and paid: exploring, reproducing, recording evidence, writing findings, moving them between Feather and Flow, validating, corrections, and any required MFR.</li><li><b>Paused but still working?</b> Turn it back on now. Already worked off the clock? Send your HDM the task ID and your best estimate of the missing time.</li><li><b>A small overage can happen.</b> Expect to go significantly over? Flag your HDM early, say what is taking longer, ask what to prioritize, and keep tracking while you wait.</li><li><b>Same step keeps pushing you over</b> (Flow validation, copy and paste, re-recording)? Share the task ID and a rough breakdown with your HDM. The Time breakdown button on each task builds it for you.</li><li><b>Don\'t abuse the flexibility.</b> Aim for 4:30 on every task and try to reach at least 5 valid findings by 2:00.</li></ul><p class="hint">Source: Miguel in the announcements channel, and Lino at the Nov 12 Office Hours.</p>')+
-  gSec('queue','Concurrency, queue and PODs','<ul><li>1 active task. A 2nd only while one waits on an MFR review, and it must be from a different app. New experts: 1 only.</li><li>Finish within 1–2 days. Tasks held 3–4 days can be extracted automatically.</li><li>Keep claiming tasks from different apps across your assigned PODs; many environments still have valid findings to discover.</li><li>Primary POD first. Engineering &amp; Data experts may also claim Healthcare; Creative &amp; Design experts may also claim Commercial.</li></ul>')+
-  gSec('open','Still to confirm with your HDM','<p><b>Low-yield unclaim at 0:45.</b> The Nov 9 notes allow unclaiming a low-yield runtime (can\'t yield 20+) inside the first 45 minutes. At the Nov 12 Office Hours, Lino only described the 2:00 rule (under 5 → MFR and release) and encouraged testing on. Until confirmed: a <b>broken</b> runtime is still a clear unclaim in the window; for a merely <b>low-yield</b> one, the safer path is to carry it to the 2:00 checkpoint.</p><p class="hint">Resolved: the old 1:30 check-in and "10 findings by 0:45" rules are replaced by the 2:00 rule.</p>')+
+    '<h3>Additional tasks</h3><p>Tasks auto-released after 3 days, sometimes with old findings or reviewer comments. Treat it as an empty task: reuse valid existing findings or delete everything and start fresh. Comments are optional to read.</p>'+
+    '<h3>Task from the instructions page that already shows findings</h3><p>Treat it as a brand-new task.</p>')+
+  gSec('rubric','Writing findings',gTable(['Field','Rule'],[
+    ['Summary','Page or section, then a colon. Bug: what fails and when (<code>Chats: Only first names are displayed for selected contacts when sharing</code>). FR: what it should do (<code>Profile menu: Add account should open the add account flow</code>). Short and to the point'],
+    ['Priority','P0 core task blocked · P1 core support or severe UX · P2 everything else. Focus on P0/P1 functionality; avoid cosmetic P2s'],
+    ['Issue Type','Bug: implemented but broken. FR: missing compared with the real app'],
+    ['Page or Workflow','Every click to reach it, with arrows: <code>Home -> Chats -> Select any chat -> Plus icon -> Contact</code>. Use the exact names shown in the app'],
+    ['Reproduction Steps','Bugs only: numbered, same path in more detail. FR: N/A'],
+    ['Actual Behavior','Short description of what you see now'],
+    ['Expected Behavior','How it should work once implemented correctly. A P2 or "unnecessary issue" reported as P1: justify here why it matters to a core workflow']]))+
+  gSec('evidence','Evidence and real-app findings','<ul><li>Screenshot or a short video. More than 3 screenshots → use a video. Aim for <b>15–45 seconds</b>.</li><li>The evidence must show exactly what the summary describes, following the workflow.</li><li>Never show your real or expert email; use a dummy like <code>name@test.com</code>. Flow checks for personal info but can misfire on apps like a Gmail clone.</li><li><b>No limit on real-app findings</b>, as long as the real app is open in a browser tab and shown in the evidence next to the clone.</li><li>Real app paywalled or restricted: ask in your POD thread what evidence is allowed.</li><li>AI may polish wording only; never generate findings or fake evidence.</li></ul>')+
+  gSec('filter','Rank and filter (Unnecessary Issues)','<ul><li><b>External website</b>: broke after leaving the app\'s domain → skip.</li><li><b>Says unavailable</b> (⊘ cursor, "Not implemented", "Coming soon") → out, unless it\'s P0/P1: then report it and justify the impact in Expected Behavior.</li><li><b>Missing prerequisite</b>: do the prerequisite and retest.</li><li><b>Known limitation</b>: already in the release notes → skip.</li></ul>')+
+  gSec('time','Time tracking (Hubstaff policy)','<ul><li><b>Working = Hubstaff running.</b> Never pause it just to stay under 4:30. All task work is tracked and paid, including the MFR.</li><li>Worked off the clock? Send your HDM the task ID and your best estimate.</li><li>A small overage is fine. Expect to go significantly over? Flag your HDM early and keep tracking.</li><li>Same step keeps pushing you over? Send the task ID and a breakdown (Time breakdown button).</li></ul>')+
+  gSec('queue','Holding time and queue','<ul><li>1 active task. A 2nd only while one waits on an MFR review, and from a different app.</li><li><b>Finish in 1 day</b> (2 is OK, 3 is the maximum). A task in progress 4+ days is unclaimed automatically and moved to Additional Tasks.</li><li>The task sheet is updated daily around Office Hours (about 9–10 AM PST) and again about 12 hours later. A link that doesn\'t open may just be mid-update.</li><li>Primary POD first. Engineering &amp; Data experts may also claim Healthcare; Creative &amp; Design experts may also claim Commercial.</li></ul><p class="hint">Sources: Office Hours Nov 9, Nov 12 and Nov 16, Miguel\'s Hubstaff post, and your HDM confirmations.</p>')+
   '</div>';
 }
 document.addEventListener('click',function(ev){
@@ -669,8 +664,10 @@ var TIPS=[
   ['.hbar','Progress to 4:30, with checkpoint marks.'],
   ['.hnums > div:nth-child(1)','Drafts: captured, not started.'],
   ['.hnums > div:nth-child(2)','Working: findings you are writing up now (rubric, Flow, Feather).'],
-  ['.hnums > div:nth-child(3)','Logged: marked Done in Feather. 30+ is the standard.'],
-  ['.hpace','Found so far vs the 30-by-4:15 plan at this minute.'],
+  ['.hnums > div:nth-child(3)','Logged out of your target: the app average from the expert dashboard (or 30 when there is none). Reach it within 4:30 and you can submit directly, no MFR. The goal is still 30.'],
+  ['label[for="nAvg"]','The app\'s average approved findings, from the expert dashboard. It becomes this task\'s target. Leave empty if it says Contact your HDM.'],
+  ['#eAvg','App average from the expert dashboard. Empty = no average (MFR under 30).'],
+  ['.hpace','Found so far vs the pace needed to reach your target (app average, or 30) by 4:15.'],
   ['[data-a="details"]','Show the full dashboard: stages, gates, pace analytics, notes and past findings.'],
   ['[data-a="actions"]','Status buttons: submitted, MFR, Outdated, unclaimed, time breakdown, edit.'],
   ['label:has(#focusOn)','Simple panel with only the clock, counts, pace and the current rule. Turn off for the full dashboard.'],
@@ -826,20 +823,20 @@ document.addEventListener('keydown',function(ev){if(ev.key==='Escape'){var m=$('
 
 /* ---------- focus view: one glanceable HUD (default); details on demand ---------- */
 function focusOn(){return!IDX.settings.full}
-var CP_NAME={45:'Triage window closes',120:'2:00 checkpoint',270:'4:30 AHT'};
-function heatOf(t){var e=elapsed(t)/60,cps=(triOn()?[45]:[]).concat([120,270]),nx=null;for(var i=0;i<cps.length;i++)if(cps[i]>e){nx=cps[i];break}
+var CP_NAME={30:'Release check',45:'Triage window closes',120:'Release window closes (2:00)',270:'4:30 AHT'};
+function heatOf(t){var e=elapsed(t)/60,cps=[30,120,270],nx=null;for(var i=0;i<cps.length;i++)if(cps[i]>e){nx=cps[i];break}
   if(nx==null)return{cls:'over',nx:null,left:e-270};var left=nx-e;return{cls:left<=10?'hot':left<=30?'warm':'cold',nx:nx,left:left}}
-function hudInner(t){var e=elapsed(t),m=e/60,c=counts(t),h=heatOf(t),pf=planFound(m),F=c.all,ok=F>=pf-1,cps=(triOn()?[45]:[]).concat([120]);
+function hudInner(t){var e=elapsed(t),m=e/60,c=counts(t),h=heatOf(t),T=tgt(t),pf=planFound(m,T),F=c.all,ok=F>=pf-1,cps=[30,120];
   var nxt=h.nx==null?'Over 4:30 by '+hm(e-AHT*60)+' · keep Hubstaff on':CP_NAME[h.nx]+' in '+hm(h.left*60);
-  var fx=(t.findings||[]).filter(function(x){return x.fix}),lf=fx.filter(function(x){return x.fix==='todo'}).length;var pace=t.status==='rework'?{c:lf?'warn':'ok',w:lf?lf+' to fix':(fx.length?'All fixed':'Flag items to fix'),d:fx.length?(fx.length-lf)+' of '+fx.length+' fixed':''}:c.n>=30?{c:'ok',w:'30+ logged',d:c.b+' Bugs · '+c.fr+' FRs'}:m<45&&!t.huntDone?{c:'',w:'Exploring',d:F+' found so far'}:ok?{c:'ok',w:'On pace',d:'found '+F+' · plan '+Math.round(pf)}:{c:'warn',w:'Behind by '+Math.max(1,Math.round(pf-F)),d:'found '+F+' · plan '+Math.round(pf)};
+  var fx=(t.findings||[]).filter(function(x){return x.fix}),lf=fx.filter(function(x){return x.fix==='todo'}).length;var pace=hasAvg(t)&&c.n>=T&&c.n<30&&t.status!=='rework'?{c:'ok',w:'Average reached',d:'submit directly · goal 30'}:t.status==='rework'?{c:lf?'warn':'ok',w:lf?lf+' to fix':(fx.length?'All fixed':'Flag items to fix'),d:fx.length?(fx.length-lf)+' of '+fx.length+' fixed':''}:c.n>=30?{c:'ok',w:'30+ logged',d:c.b+' Bugs · '+c.fr+' FRs'}:m<45&&!t.huntDone?{c:'',w:'Exploring',d:F+' found so far'}:ok?{c:'ok',w:'On pace',d:'found '+F+' · plan '+Math.round(pf)+(T<30?' of '+T:'')}:{c:'warn',w:'Behind by '+Math.max(1,Math.round(pf-F)),d:'found '+F+' · plan '+Math.round(pf)};
   return'<div class="hclock"><span class="lab">AHT'+(running(t)?'':' · paused')+'</span><b class="mono">'+hms(e)+'</b><span class="hnext">'+esc(nxt)+'</span></div>'+
   '<div class="hbar" aria-hidden="true"><i style="width:'+Math.min(100,e/(AHT*60)*100)+'%"></i>'+cps.map(function(x){return'<u style="left:'+(x/AHT*100)+'%"></u>'}).join('')+'</div>'+
-  '<div class="hnums"><div><b class="mono">'+c.draft+'</b><span>Drafts</span></div><div class="work"><b class="mono">'+c.prog+'</b><span>Working</span></div><div><b class="mono">'+c.n+'<small>/30</small></b><span>Logged</span></div></div>'+
+  '<div class="hnums"><div><b class="mono">'+c.draft+'</b><span>Drafts</span></div><div class="work"><b class="mono">'+c.prog+'</b><span>Working</span></div><div class="'+(c.n>=T?'hit':'')+'"><b class="mono">'+c.n+'<small>/'+T+'</small>'+(c.n>=T?' ✓':'')+'</b><span>'+(hasAvg(t)?'Logged · app avg':'Logged')+'</span></div></div>'+
   '<div class="hpace '+pace.c+'"><b>'+pace.w+'</b><span>'+pace.d+'</span></div>'}
 function hudHtml(t){return'<div class="hud heat-'+heatOf(t).cls+'" id="hud">'+hudInner(t)+'</div>'}
 function hruleHtml(t){var s=nextStep(t),h=heatOf(t),F=counts(t).all;
   if(t.status==='active'&&h.nx===120&&h.left<=15){var w=F<5?'under 5 → MFR and release':F<10?'5–9 → MFR, follow its answer':'10+ → keep going';return'<div class="hrule '+(F<10?'warn':'ok')+'" id="hrule" data-tip="2:00 checkpoint: under 5 → MFR and release · 5–9 → MFR and follow it · 10+ → keep testing toward 30+."><b>2:00 checkpoint · '+F+' found: '+w+'</b></div>'}
-  if(/pace/i.test(s.h))return'<div id="hrule" hidden></div>';
+  if(/^(On pace for|Behind 30 pace|Well behind 30 pace)/.test(s.h))return'<div id="hrule" hidden></div>';
   return'<div class="hrule '+s.tone+'" id="hrule" data-tip="'+esc(s.p)+'"><b>'+esc(s.h)+'</b></div>'}
 function focusPanel(t,parts){
   var act=t.status==='active'||t.status==='mfr'||t.status==='rework',forms=(parts.clock.match(/<form class="row" id="(?:priorForm|syncForm)">[\s\S]*?<\/form>/g)||[]).join('');

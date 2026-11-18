@@ -306,3 +306,5 @@ textarea.in{resize:vertical}
 .hctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 @media (prefers-reduced-motion:no-preference){.hud.heat-over{animation:hudpulse 2s ease-in-out infinite}}
 @keyframes hudpulse{50%{filter:brightness(1.12)}}
+.hnums .hit b{color:var(--ok)}.heat-over .hnums .hit b{color:#fff}
+.banner.crit{background:var(--crit-soft);color:var(--crit)}
