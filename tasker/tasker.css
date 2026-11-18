@@ -314,3 +314,7 @@ textarea.in{resize:vertical}
 .tgt>span:not(.lab):not(.sp){color:var(--muted)}
 .tgt.none b{color:var(--warn,#B45309)}
 .tgt.edit .in{height:30px}
+
+.addbar{align-items:end}
+textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padding-top:9px;padding-bottom:9px;white-space:pre-wrap;overflow-wrap:anywhere;display:block;width:100%}
+.f textarea{overflow-wrap:anywhere}
