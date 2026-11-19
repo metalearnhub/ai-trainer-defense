@@ -362,3 +362,9 @@ textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padd
 .tvrow.sthead{font-size:12px;color:var(--muted);font-weight:600}
 .tvrow.strow:hover{background:transparent}
 @media (max-width:900px){.tvrow.sthead,.tvrow.strow{grid-template-columns:1fr 40px 60px 90px 56px}.tvrow.sthead span,.tvrow.strow span{display:block!important}}
+
+.thist .hlist{list-style:none;margin:6px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.thist .hlist li{display:flex;flex-direction:column;gap:1px;position:relative;font-size:13px}
+.thist .hlist li::before{content:"";position:absolute;left:-20px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.thist .hlist li span{color:var(--muted);font-size:12px}
+.rbadge.mb{background:var(--accent-soft);color:var(--accent);margin-right:4px}

@@ -28,7 +28,7 @@ function loadTasks(){TASKS={};IDX.ids.forEach(function(id){var t=lsGet('t.'+id,n
 loadTasks();
 function saveIdx(){lsSet('index',IDX)}
 var savedTimer=null;
-function saveTask(t){t.updatedAt=Date.now();if(typeof queuePush==='function')queuePush(t.id);if(lsSet('t.'+t.id,t)){$$('[data-saved]').forEach(function(el){el.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})})}}
+function saveTask(t){t.updatedAt=Date.now();syncHist(t);if(typeof queuePush==='function')queuePush(t.id);if(lsSet('t.'+t.id,t)){$$('[data-saved]').forEach(function(el){el.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})})}}
 function cur(){return IDX.cur&&TASKS[IDX.cur]||null}
 function allTasks(){return IDX.ids.map(function(id){return TASKS[id]}).filter(Boolean).sort(function(a,b){return b.createdAt-a.createdAt})}
 
@@ -195,7 +195,7 @@ function render(){
 function sideHtml(){
   var q=VIEW.q.toLowerCase(),ts=allTasks().filter(function(t){if(!q)return true;return(t.app+' '+(t.featherId||'')+' '+(t.findings||[]).map(function(f){return f.text+' '+(f.rub?RF.map(function(k){return f.rub[k.k]||''}).join(' '):'')}).join(' ')+' '+(t.notes||'')).toLowerCase().indexOf(q)>=0});
   var act=ts.filter(function(t){return t.status==='active'||t.status==='mfr'||t.status==='rework'}),hist=ts.filter(function(t){return!(t.status==='active'||t.status==='mfr'||t.status==='rework')});
-  var item=function(t){var c=counts(t);return'<button class="titem" data-a="open" data-id="'+t.id+'" aria-current="'+(t.id===IDX.cur&&VIEW.mode==='task')+'"><b>'+esc(t.app||'Untitled app')+'</b><span>'+hm(elapsed(t))+' · '+c.n+'/30 · '+OUT[t.status][0]+'</span><span>'+day(t.createdAt)+(t.featherId?' · '+t.featherId.slice(0,8):'')+'</span>'+(realC(t).need?'<span class="rbadge">Real-app evidence needed · '+realC(t).need+'</span>':'')+'</button>'};
+  var item=function(t){var c=counts(t);return'<button class="titem" data-a="open" data-id="'+t.id+'" aria-current="'+(t.id===IDX.cur&&VIEW.mode==='task')+'"><b>'+esc(t.app||'Untitled app')+'</b><span>'+hm(elapsed(t))+' · '+c.n+'/30 · '+OUT[t.status][0]+'</span><span>'+day(t.createdAt)+(t.featherId?' · '+t.featherId.slice(0,8):'')+'</span>'+(mfrCount(t)?'<span class="rbadge mb">MFR ×'+mfrCount(t)+(reworkCount(t)?' · rework ×'+reworkCount(t):'')+'</span>':'')+(realC(t).need?'<span class="rbadge">Real-app evidence needed · '+realC(t).need+'</span>':'')+'</button>'};
   var notif='Notification' in window?(Notification.permission==='granted'&&IDX.settings.notify?'Desktop reminders on':Notification.permission==='denied'?'Reminders blocked in Chrome':'Turn on desktop reminders'):'Desktop reminders unsupported';
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="tv" aria-current="'+(VIEW.mode==='tasks')+'" style="width:100%;justify-content:center;margin-bottom:8px">All tasks &amp; findings · '+allTasks().length+'</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><button class="btn ghost" data-a="guide" aria-current="'+(VIEW.mode==='guide')+'" style="width:100%;justify-content:center;margin-bottom:8px">Guide · rules &amp; workflow</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
@@ -236,6 +236,7 @@ function taskHtml(t){
   var gates='<div class="next '+s.tone+'" id="next"><div class="row"><span class="lab">Rule check</span><span class="sp"></span><button class="btn sm ghost" data-a="guide" data-g="clock" data-tip="Open the guide at the clock-vs-count table.">Guide</button></div><h2>'+esc(s.h)+'</h2><p>'+esc(s.p)+'</p></div><div class="card" id="strat">'+stratHtml(t)+'</div>'+
     '<div class="card"><span class="lab">Gates</span><div class="gates" id="gates">'+gatesHtml(e)+'</div></div>';
   var notes='<div class="card"><div class="row"><span class="lab">Scratch notes</span><span class="sp"></span><span class="saved" data-saved></span></div><textarea class="in notes" id="notes" data-in="notes" placeholder="Workflows to try, things to re-check, real-app comparisons…" aria-label="Scratch notes">'+esc(t.notes||'')+'</textarea></div>';
+  notes+=histHtml(t);
   var pq=VIEW.pastQ.toLowerCase(),pl=past.filter(function(p){return!pq||String(p.f.text).toLowerCase().indexOf(pq)>=0});
   var nTasks={};past.forEach(function(p){nTasks[p.task.id]=1});
   var pastHtml='<div class="card"><span class="lab">Past findings on '+esc(t.app||'this app')+'</span>'+(past.length?'<p class="hint" style="margin:0">'+Object.keys(nTasks).length+' earlier task'+(Object.keys(nTasks).length>1?'s':'')+', '+past.length+' findings. Drafts that match one get an amber flag.</p><input class="in" data-in="pastQ" id="pastQ" placeholder="Search past findings" value="'+esc(VIEW.pastQ)+'" aria-label="Search past findings"><div class="past">'+pl.slice(0,200).map(function(p){var first=String(p.f.text||'').split('\n')[0];return'<div class="pf '+p.f.type+'"><div class="m">'+day(p.task.createdAt)+' · '+(p.f.type==='bug'?'Bug':p.f.type==='fr'?'FR':'?')+' · '+(p.f.status==='done'?'done':p.f.status)+'</div>'+esc(first||'(empty)')+'</div>'}).join('')+'</div>':'<p class="hint" style="margin:0">'+(key?'First task on this app. Next time you claim it, this list shows what you already filed.':'Name the app to compare with earlier tasks.')+'</p>')+'</div>';
@@ -317,7 +318,7 @@ document.addEventListener('click',function(ev){
   if(a==='menu'){var sd=$('#side');if(sd)sd.classList.toggle('open');return}
   if(a==='notify'){askPermission();return}
   if(a==='export'){exportData();return}
-  if(a==='mfrRun'&&t){t.mfrRun=true;saveTask(t);render();toast('MFR workflow noted','Follow its outcome: keep working, or submit the MFR.','ok');return}
+  if(a==='mfrRun'&&t){t.mfrRun=true;logEv(t,'mfrRun');saveTask(t);render();toast('MFR workflow noted','Follow its outcome: keep working, or submit the MFR.','ok');return}
   if(a==='authBack'){VIEWAUTH.sent=false;VIEWAUTH.err='';render();return}
   if(a==='authResend'){authSubmit(true);return}
   if(a==='signout'){api({action:'signout'}).catch(function(){});signOutLocal('');return}
@@ -954,6 +955,28 @@ function authSubmit(){
   api({action:'verify',email:'dijaedadula@gmail.com',code:code},false).then(function(d){a.busy=false;SESSION={token:d.token,expires_at:d.expires_at,email:d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','This device stays signed in for a year.','ok');pull(true)})
   .catch(function(e){a.busy=false;a.err=e.message;render();var c=$('#aCode');if(c)c.focus()});
 }
+/* ---------- task history: every status change is recorded, so an MFR stays on the record even after the task is submitted ---------- */
+function histBackfill(t){var st=t.status,end=t.endedAt||t.updatedAt||t.createdAt,e=Math.round(elapsed(t)),h=[{k:'claimed',to:'active',at:t.createdAt,e:0}];
+  if(t.mfrRun)h.push({k:'mfrRun',at:end,inf:1});
+  if(st==='active')return h;
+  if(st==='mfr'||st==='form'){h.push({k:'status',from:'active',to:st,at:end,e:e,inf:1});return h}
+  if(st==='rework'){var rf=t.reworkFrom==='mfr'?'mfr':'submitted';h.push({k:'status',from:'active',to:rf,at:end,e:e,inf:1});h.push({k:'status',from:rf,to:'rework',at:end,e:e,inf:1});return h}
+  var from='active';if(t.mfrRun&&st!=='unclaimed'&&st!=='released'){h.push({k:'status',from:'active',to:'mfr',at:end,e:e,inf:1,note:'inferred from the MFR flag'});from='mfr'}
+  h.push({k:'status',from:from,to:st,at:end,e:e,inf:1});return h}
+function histOf(t){return t.hist||histBackfill(t)}
+function mfrCount(t){return histOf(t).filter(function(x){return(x.to==='mfr'||x.to==='form')&&x.from!=='rework'}).length}
+function reworkCount(t){var n=histOf(t).filter(function(x){return x.to==='rework'}).length;return Math.max(n,t.reworks||0)}
+function syncHist(t){if(!t||!t.status)return;if(!t.hist)t.hist=histBackfill(t);var lastTo=null;for(var i=t.hist.length-1;i>=0;i--)if(t.hist[i].to){lastTo=t.hist[i].to;break}
+  if(lastTo!==t.status)t.hist.push({k:'status',from:lastTo,to:t.status,at:Date.now(),e:Math.round(elapsed(t))})}
+function logEv(t,k,note){if(!t.hist)t.hist=histBackfill(t);t.hist.push({k:k,at:Date.now(),e:Math.round(elapsed(t)),note:note||undefined})}
+var EVL={mfr:'MFR submitted · awaiting review',form:'MFR submitted',submitted:'Submitted',outdated:'Outdated · submitted',unclaimed:'Unclaimed / released',released:'Closed by the HDM',rework:'Corrections requested',active:'In progress'};
+function evText(x){if(x.k==='claimed')return'Claimed the task';if(x.k==='mfrRun')return'Started the MFR workflow';if(x.k==='note')return x.note||'Note';
+  if(x.from==='rework'&&x.to==='mfr')return'Corrections done · back to MFR review';if(x.from==='rework'&&x.to==='submitted')return'Corrections done · resubmitted';
+  if(x.from==='mfr'&&x.to==='submitted')return'MFR approved · submitted as-is';if(x.from==='mfr'&&x.to==='active')return'HDM: keep working';
+  if(x.from&&x.from!=='active'&&x.to==='active')return'Reopened';return EVL[x.to]||x.to}
+function histHtml(t){var h=histOf(t),m=mfrCount(t),r=reworkCount(t);
+  var rows=h.map(function(x){return'<li><b>'+esc(evText(x))+'</b><span>'+new Date(x.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(x.e!=null?' · clock '+hm(x.e):'')+(x.inf?' · reconstructed from older data':'')+'</span></li>'}).join('');
+  return'<div class="card thist"><div class="row"><span class="lab">Task history</span><span class="sp"></span>'+(m?'<span class="pill warn">MFR ×'+m+'</span>':'')+(r?'<span class="pill info">Rework ×'+r+'</span>':'')+'</div><ol class="hlist">'+rows+'</ol></div>'}
 /* ---------- overview page: every task and every finding, with filters and sorting ---------- */
 var TV=Object.assign({tab:'tasks',q:'',status:'all',app:'all',range:'all',need:false,sort:'recent',fq:'',ftype:'all',fprio:'all',fstatus:'all',freal:'all',fts:'all',fsort:'recent'},lsGet('tv',{}));
 function tvSave(){lsSet('tv',TV)}
@@ -972,7 +995,7 @@ function tvTasks(){
     if(TV.status==='open'){if(!OPENST[t.status])return false}else if(TV.status!=='all'&&t.status!==TV.status)return false;
     if(TV.app!=='all'&&appKey(t.app)!==TV.app)return false;
     if(lim&&now-t.createdAt>lim*864e5)return false;
-    if(TV.need&&!realC(t).need)return false;
+    if(TV.need&&!realC(t).need)return false;if(TV.mfr&&!mfrCount(t))return false;
     if(q){var hay=(t.app+' '+(t.featherId||'')+' '+(t.notes||'')+' '+(t.findings||[]).map(ftxt).join(' ')).toLowerCase();if(hay.indexOf(q)<0)return false}
     return true});
   var S={recent:function(a,b){return lastAct(b)-lastAct(a)},'new':function(a,b){return b.createdAt-a.createdAt},old:function(a,b){return a.createdAt-b.createdAt},app:function(a,b){return String(a.app).localeCompare(String(b.app))||b.createdAt-a.createdAt},found:function(a,b){return counts(b).all-counts(a).all},logged:function(a,b){return counts(b).n-counts(a).n},time:function(a,b){return elapsed(b)-elapsed(a)},evidence:function(a,b){return realC(b).need-realC(a).need}};
@@ -1012,7 +1035,7 @@ function stCalc(ts){
     avgLogged:avgOf(worked.map(function(t){return counts(t).n})),avgTarget:avgOf(worked.map(tgt)),avgTime:avgOf(worked.map(elapsed)),
     perHour:secs>600?found/(secs/3600):null,gap:med(gaps),logT:med(logs),
     relMed:med(rel.map(elapsed)),relEarly:rel.filter(function(t){return elapsed(t)<=1800}).length,relMid:rel.filter(function(t){return elapsed(t)>1800&&elapsed(t)<=7200}).length,relLate:rel.filter(function(t){return elapsed(t)>7200}).length,
-    stuck:ts.filter(function(t){return!RELEASED[t.status]&&elapsed(t)>=7200&&counts(t).all<5&&t.status!=='active'}).length}}
+    mfrTasks:ts.filter(function(t){return mfrCount(t)>0}).length,mfrSubs:ts.reduce(function(a,t){return a+mfrCount(t)},0),reworks:ts.reduce(function(a,t){return a+reworkCount(t)},0),stuck:ts.filter(function(t){return!RELEASED[t.status]&&elapsed(t)>=7200&&counts(t).all<5&&t.status!=='active'}).length}}
 function stDelta(cur,prev,lowerBetter,fmt){if(cur==null||prev==null)return'';var d=cur-prev;if(Math.abs(d)<(Math.abs(prev)*.02))return'<small class="muted"> · same as before</small>';var good=lowerBetter?d<0:d>0;return'<small class="'+(good?'dg':'db')+'"> · '+(d>0?'▲ ':'▼ ')+fmt(Math.abs(d))+' vs previous</small>'}
 function tvStatsHtml(){
   var days={week:7,month:30,all:0}[TV.srange||'month'],now=Date.now(),cur=stCalc(days?stWin(now-days*864e5,now+1):allTasks()),prev=days?stCalc(stWin(now-2*days*864e5,now-days*864e5)):null;
@@ -1031,17 +1054,18 @@ function tvStatsHtml(){
     tile(cur.gap==null?'—':mmss(cur.gap),'Typical gap between findings',cur.logT==null?'':'log one in '+mmss(cur.logT)+(prev?stDelta(cur.logT,prev.logT,true,mmss):''))+
     tile(cur.relMed==null?'—':hm(cur.relMed),'Typical release time',cur.rel.length+' released · '+cur.relEarly+' by 0:30 · '+cur.relMid+' by 2:00 · '+cur.relLate+' after 2:00')+'</div>'+
   '<div class="stcard"><div class="lab">Outcomes</div><div class="stbar">'+bar(o.sub,'ok','Submitted')+bar(o.mfr,'warn','MFR')+bar(o.rework,'info','Rework')+bar(o.rel,'crit','Released')+bar(o.open,'mute','In progress')+'</div><div class="stkey"><span><i class="ok"></i>Submitted '+o.sub+'</span><span><i class="warn"></i>MFR '+o.mfr+'</span><span><i class="info"></i>Rework '+o.rework+'</span><span><i class="crit"></i>Released '+o.rel+'</span><span><i class="mute"></i>In progress '+o.open+'</span></div></div>'+
+  '<div class="stcard"><div class="lab">MFR and rework · counted even when the task ended up submitted</div><div class="stkey"><span><b class="mono">'+cur.mfrTasks+'</b>&nbsp;of '+cur.n+' tasks went through the MFR</span><span><b class="mono">'+cur.mfrSubs+'</b>&nbsp;MFR submissions</span><span><b class="mono">'+cur.reworks+'</b>&nbsp;corrections requested</span></div></div>'+
   '<div class="stcard"><div class="lab">Open loops</div><div class="stkey"><span><b class="mono">'+evNeed+'</b>&nbsp;real-app evidence missing</span><span><b class="mono">'+fixTodo+'</b>&nbsp;rework fixes to do</span><span><b class="mono">'+held+'</b>&nbsp;tasks held 2+ days</span><span><b class="mono">'+cur.stuck+'</b>&nbsp;tasks past 2:00 with under 5 found, not released</span></div></div>'+
   '<div class="stcard"><div class="lab">By app · tasks you worked to the end</div>'+(rows.length?'<div class="tvlist"><div class="tvrow sthead"><span>App</span><span>Tasks</span><span>Reached</span><span>Logged / target</span><span>Avg time</span></div>'+rows.slice(0,15).map(function(r){return'<div class="tvrow strow"><span class="tvmain"><b>'+esc(r.app)+'</b></span><span class="mono">'+r.n+'</span><span class="mono">'+r.reach+'/'+r.n+'</span><span class="mono">'+f1(r.logged)+' / '+f1(r.target)+'</span><span class="mono">'+hm(r.time)+'</span></div>'}).join('')+'</div>':'<p class="muted" style="margin:0">Nothing finished in this period yet.</p>')+'</div>'}
 function tvTasksHtml(){
   var all=allTasks(),ts=tvTasks(),sum=function(f){return ts.reduce(function(a,t){return a+f(t)},0)};
   var kpi=function(n,l){return'<div><b class="mono">'+n+'</b><span>'+l+'</span></div>'};
   var rows=ts.map(function(t){var c=counts(t),r=realC(t);
-    return'<button class="tvrow" data-a="open" data-id="'+t.id+'"><span class="tvmain"><b>'+esc(t.app||'Untitled app')+'</b><small>'+(t.featherId?esc(t.featherId.slice(0,10))+' · ':'')+'claimed '+day(t.createdAt)+'</small></span><span class="pill '+OUT[t.status][1]+'">'+OUT[t.status][0]+'</span><span class="mono tvn" title="Time on task">'+hm(elapsed(t))+'</span><span class="mono tvn" title="Logged / target">'+c.n+'/'+tgt(t)+'</span><span class="tvn" title="Found · Bugs · FRs">'+c.all+' found · '+c.b+'B '+c.fr+'FR</span><span class="tvn">'+(r.need?'<span class="pill warn">Evidence · '+r.need+'</span>':r.all?'<span class="pill ok">Real app · '+r.all+'</span>':'')+'</span><span class="tvn muted">'+new Date(lastAct(t)).toLocaleDateString(undefined,{month:'short',day:'numeric'})+'</span></button>'}).join('');
+    return'<button class="tvrow" data-a="open" data-id="'+t.id+'"><span class="tvmain"><b>'+esc(t.app||'Untitled app')+'</b><small>'+(t.featherId?esc(t.featherId.slice(0,10))+' · ':'')+'claimed '+day(t.createdAt)+'</small></span><span class="pill '+OUT[t.status][1]+'">'+OUT[t.status][0]+'</span><span class="mono tvn" title="Time on task">'+hm(elapsed(t))+'</span><span class="mono tvn" title="Logged / target">'+c.n+'/'+tgt(t)+'</span><span class="tvn" title="Found · Bugs · FRs">'+c.all+' found · '+c.b+'B '+c.fr+'FR</span><span class="tvn">'+(mfrCount(t)?'<span class="pill warn">MFR ×'+mfrCount(t)+'</span> ':'')+(reworkCount(t)?'<span class="pill info">Rework ×'+reworkCount(t)+'</span> ':'')+(r.need?'<span class="pill warn">Evidence · '+r.need+'</span>':r.all?'<span class="pill ok">Real app · '+r.all+'</span>':'')+'</span><span class="tvn muted">'+new Date(lastAct(t)).toLocaleDateString(undefined,{month:'short',day:'numeric'})+'</span></button>'}).join('');
   return'<div class="tvfilters"><input class="in" id="tvq" data-tk="q" placeholder="Search app, Feather ID, notes, finding text…" value="'+esc(TV.q)+'" aria-label="Search tasks">'+
     tvSel('status',TV.status,tvStatusOpts(),'Status')+tvSel('app',TV.app,tvAppOpts(),'App')+tvSel('range',TV.range,[['all','Any time'],['today','Last 24 hours'],['week','Last 7 days'],['month','Last 30 days']],'Claimed')+
     tvSel('sort',TV.sort,[['recent','Sort: recent activity'],['new','Newest claimed'],['old','Oldest claimed'],['app','App A–Z'],['found','Most found'],['logged','Most logged'],['time','Longest time'],['evidence','Most evidence needed']],'Sort')+
-    '<label class="tvchk"><input type="checkbox" data-tk="need"'+(TV.need?' checked':'')+'> Evidence needed</label><button class="btn sm ghost" data-a="tvReset">Reset</button></div>'+
+    '<label class="tvchk"><input type="checkbox" data-tk="need"'+(TV.need?' checked':'')+'> Evidence needed</label><label class="tvchk"><input type="checkbox" data-tk="mfr"'+(TV.mfr?' checked':'')+'> Went through MFR</label><button class="btn sm ghost" data-a="tvReset">Reset</button></div>'+
     '<div class="hnums tvk">'+kpi(ts.length+'<small>/'+all.length+'</small>','Tasks shown')+kpi(ts.filter(function(t){return OPENST[t.status]}).length,'Open')+kpi(ts.filter(function(t){return t.status==='submitted'||t.status==='form'||t.status==='outdated'}).length,'Submitted')+kpi(sum(function(t){return counts(t).n}),'Logged')+kpi(sum(function(t){return realC(t).need}),'Evidence needed')+'</div>'+
     (rows?'<div class="tvlist">'+rows+'</div>':'<p class="muted" style="margin:0">No tasks match these filters.</p>')}
 function tvFindsHtml(){
@@ -1057,7 +1081,7 @@ function tvFindsHtml(){
     (list?'<div class="tvlist">'+list+'</div>':'<p class="muted" style="margin:0">No findings match these filters.</p>')}
 function tvCsv(){
   var q=function(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"'},lines;
-  if(TV.tab==='tasks'){lines=[['app','feather_id','status','claimed','time','logged','target','found','bugs','frs','evidence_needed','real_app_tagged','last_activity'].join(',')].concat(tvTasks().map(function(t){var c=counts(t),r=realC(t);return[t.app,t.featherId||'',OUT[t.status][0],new Date(t.createdAt).toISOString().slice(0,10),hm(elapsed(t)),c.n,tgt(t),c.all,c.b,c.fr,r.need,r.all,new Date(lastAct(t)).toISOString()].map(q).join(',')}))}
+  if(TV.tab==='tasks'){lines=[['app','feather_id','status','claimed','time','logged','target','found','bugs','frs','evidence_needed','real_app_tagged','mfr_submissions','reworks','history','last_activity'].join(',')].concat(tvTasks().map(function(t){var c=counts(t),r=realC(t);return[t.app,t.featherId||'',OUT[t.status][0],new Date(t.createdAt).toISOString().slice(0,10),hm(elapsed(t)),c.n,tgt(t),c.all,c.b,c.fr,r.need,r.all,mfrCount(t),reworkCount(t),histOf(t).map(function(x){return new Date(x.at).toISOString().slice(0,16)+' '+evText(x)}).join(' | '),new Date(lastAct(t)).toISOString()].map(q).join(',')}))}
   else{lines=[['app','feather_id','task_status','type','priority','progress','real_app','summary','found_at','created'].join(',')].concat(tvFinds().map(function(r){return[r.t.app,r.t.featherId||'',OUT[r.t.status][0],fType(r.f),fPrio(r.f),r.f.status,r.f.real||'',fSum(r.f),hm(r.f.at||0),r.f.createdAt?new Date(r.f.createdAt).toISOString():''].map(q).join(',')}))}
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='tasker-'+TV.tab+'-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)}
 document.addEventListener('click',function(ev){var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a;
@@ -1068,7 +1092,7 @@ document.addEventListener('click',function(ev){var b=ev.target.closest('[data-a]
   if(a==='tvCsv'){tvCsv();return}
   if(a==='realScan'){var r=realScan();render();toast('Real-app scan',r.found?'Tagged '+r.found+' finding'+(r.found===1?'':'s')+' in '+r.tasks+' task'+(r.tasks===1?'':'s')+', oldest first. Filter by Evidence needed to review them.':'No new findings compare with the real app.','ok');return}
   if(a==='tvBulk'){if(!TV.confirmBulk){TV.confirmBulk=true;render();return}TV.confirmBulk=false;var bt={};tvFinds().forEach(function(r){if(r.f.real==='need'){r.f.real='done';r.f.u=Date.now();bt[r.t.id]=r.t}});Object.keys(bt).forEach(function(id){saveTask(bt[id])});render();toast('Updated','Marked as evidence added.','ok');return}
-  if(a==='tvReset'){if(TV.tab==='tasks'){TV.q='';TV.status='all';TV.range='all';TV.need=false;TV.sort='recent'}else{TV.fq='';TV.ftype='all';TV.fprio='all';TV.fstatus='all';TV.freal='all';TV.fts='all';TV.fsort='recent'}TV.app='all';tvSave();render();return}
+  if(a==='tvReset'){if(TV.tab==='tasks'){TV.q='';TV.status='all';TV.range='all';TV.need=false;TV.mfr=false;TV.sort='recent'}else{TV.fq='';TV.ftype='all';TV.fprio='all';TV.fstatus='all';TV.freal='all';TV.fts='all';TV.fsort='recent'}TV.app='all';tvSave();render();return}
   if(a==='fReset'){VIEW.fq='';VIEW.ftype='all';VIEW.fprio='all';VIEW.filter='all';render();return}
   if(a==='goF'){var tid=b.dataset.t,fid=b.dataset.id;openTask(tid);var tt=TASKS[tid],ff=tt&&findF(tt,fid);VIEW.filter=ff?ff.status:'all';VIEW.fq='';VIEW.ftype='all';VIEW.fprio='all';render();setTimeout(function(){var el=document.querySelector('.f[data-fid="'+fid+'"]');if(el){el.scrollIntoView({block:'center'});el.classList.add('flash');setTimeout(function(){el.classList.remove('flash')},1800)}},60);return}
 });
