@@ -969,14 +969,20 @@ function reworkCount(t){var n=histOf(t).filter(function(x){return x.to==='rework
 function syncHist(t){if(!t||!t.status)return;if(!t.hist)t.hist=histBackfill(t);var lastTo=null;for(var i=t.hist.length-1;i>=0;i--)if(t.hist[i].to){lastTo=t.hist[i].to;break}
   if(lastTo!==t.status)t.hist.push({k:'status',from:lastTo,to:t.status,at:Date.now(),e:Math.round(elapsed(t))})}
 function logEv(t,k,note){if(!t.hist)t.hist=histBackfill(t);t.hist.push({k:k,at:Date.now(),e:Math.round(elapsed(t)),note:note||undefined})}
+function mfrCand(t){return t.status==='submitted'&&!mfrCount(t)&&elapsed(t)>=255*60&&counts(t).n<tgt(t)}
+function markMfr(t){var h=histOf(t).slice(),i=h.length-1;while(i>0&&h[i].k!=='status')i--;var last=h[i],at=Math.max((last&&last.at)||t.createdAt,t.createdAt)-1000;
+  var ent={k:'status',from:'active',to:'mfr',at:at,e:Math.round(elapsed(t)),man:1,note:'added by you'};
+  if(last&&last.k==='status'&&last.from==='active')last.from='mfr';
+  h.splice(Math.max(1,i),0,ent);t.hist=h;t.mfrRun=true}
+function unmarkMfr(t){var h=histOf(t).filter(function(x){return!x.man});for(var i=h.length-1;i>0;i--)if(h[i].k==='status'&&h[i].from==='mfr'&&!h.some(function(y,j){return j<i&&y.to==='mfr'})){h[i].from='active'}t.hist=h}
 var EVL={mfr:'MFR submitted · awaiting review',form:'MFR submitted',submitted:'Submitted',outdated:'Outdated · submitted',unclaimed:'Unclaimed / released',released:'Closed by the HDM',rework:'Corrections requested',active:'In progress'};
 function evText(x){if(x.k==='claimed')return'Claimed the task';if(x.k==='mfrRun')return'Started the MFR workflow';if(x.k==='note')return x.note||'Note';
   if(x.from==='rework'&&x.to==='mfr')return'Corrections done · back to MFR review';if(x.from==='rework'&&x.to==='submitted')return'Corrections done · resubmitted';
   if(x.from==='mfr'&&x.to==='submitted')return'MFR approved · submitted as-is';if(x.from==='mfr'&&x.to==='active')return'HDM: keep working';
   if(x.from&&x.from!=='active'&&x.to==='active')return'Reopened';return EVL[x.to]||x.to}
 function histHtml(t){var h=histOf(t),m=mfrCount(t),r=reworkCount(t);
-  var rows=h.map(function(x){return'<li><b>'+esc(evText(x))+'</b><span>'+new Date(x.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(x.e!=null?' · clock '+hm(x.e):'')+(x.inf?' · reconstructed from older data':'')+'</span></li>'}).join('');
-  return'<div class="card thist"><div class="row"><span class="lab">Task history</span><span class="sp"></span>'+(m?'<span class="pill warn">MFR ×'+m+'</span>':'')+(r?'<span class="pill info">Rework ×'+r+'</span>':'')+'</div><ol class="hlist">'+rows+'</ol></div>'}
+  var rows=h.map(function(x){return'<li><b>'+esc(evText(x))+'</b><span>'+new Date(x.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(x.e!=null?' · clock '+hm(x.e):'')+(x.inf?' · reconstructed from older data':'')+(x.man?' · added by you':'')+'</span>'+(x.man?'<button class="btn sm ghost" data-a="mfrDel">Remove</button>':'')+'</li>'}).join('');
+  return'<div class="card thist"><div class="row"><span class="lab">Task history</span><span class="sp"></span>'+(m?'<span class="pill warn">MFR ×'+m+'</span>':'')+(r?'<span class="pill info">Rework ×'+r+'</span>':'')+'</div><ol class="hlist">'+rows+'</ol>'+(t.status!=='active'&&!m?'<div class="row"><button class="btn sm" data-a="mfrAdd" title="Older tasks did not record the MFR. Add it to the history.">+ This task went through the MFR</button></div>':'')+'</div>'}
 /* ---------- overview page: every task and every finding, with filters and sorting ---------- */
 var TV=Object.assign({tab:'tasks',q:'',status:'all',app:'all',range:'all',need:false,sort:'recent',fq:'',ftype:'all',fprio:'all',fstatus:'all',freal:'all',fts:'all',fsort:'recent'},lsGet('tv',{}));
 function tvSave(){lsSet('tv',TV)}
@@ -995,7 +1001,7 @@ function tvTasks(){
     if(TV.status==='open'){if(!OPENST[t.status])return false}else if(TV.status!=='all'&&t.status!==TV.status)return false;
     if(TV.app!=='all'&&appKey(t.app)!==TV.app)return false;
     if(lim&&now-t.createdAt>lim*864e5)return false;
-    if(TV.need&&!realC(t).need)return false;if(TV.mfr&&!mfrCount(t))return false;
+    if(TV.need&&!realC(t).need)return false;if(TV.mfr&&!mfrCount(t))return false;if(TV.cand&&!mfrCand(t))return false;
     if(q){var hay=(t.app+' '+(t.featherId||'')+' '+(t.notes||'')+' '+(t.findings||[]).map(ftxt).join(' ')).toLowerCase();if(hay.indexOf(q)<0)return false}
     return true});
   var S={recent:function(a,b){return lastAct(b)-lastAct(a)},'new':function(a,b){return b.createdAt-a.createdAt},old:function(a,b){return a.createdAt-b.createdAt},app:function(a,b){return String(a.app).localeCompare(String(b.app))||b.createdAt-a.createdAt},found:function(a,b){return counts(b).all-counts(a).all},logged:function(a,b){return counts(b).n-counts(a).n},time:function(a,b){return elapsed(b)-elapsed(a)},evidence:function(a,b){return realC(b).need-realC(a).need}};
@@ -1054,7 +1060,7 @@ function tvStatsHtml(){
     tile(cur.gap==null?'—':mmss(cur.gap),'Typical gap between findings',cur.logT==null?'':'log one in '+mmss(cur.logT)+(prev?stDelta(cur.logT,prev.logT,true,mmss):''))+
     tile(cur.relMed==null?'—':hm(cur.relMed),'Typical release time',cur.rel.length+' released · '+cur.relEarly+' by 0:30 · '+cur.relMid+' by 2:00 · '+cur.relLate+' after 2:00')+'</div>'+
   '<div class="stcard"><div class="lab">Outcomes</div><div class="stbar">'+bar(o.sub,'ok','Submitted')+bar(o.mfr,'warn','MFR')+bar(o.rework,'info','Rework')+bar(o.rel,'crit','Released')+bar(o.open,'mute','In progress')+'</div><div class="stkey"><span><i class="ok"></i>Submitted '+o.sub+'</span><span><i class="warn"></i>MFR '+o.mfr+'</span><span><i class="info"></i>Rework '+o.rework+'</span><span><i class="crit"></i>Released '+o.rel+'</span><span><i class="mute"></i>In progress '+o.open+'</span></div></div>'+
-  '<div class="stcard"><div class="lab">MFR and rework · counted even when the task ended up submitted</div><div class="stkey"><span><b class="mono">'+cur.mfrTasks+'</b>&nbsp;of '+cur.n+' tasks went through the MFR</span><span><b class="mono">'+cur.mfrSubs+'</b>&nbsp;MFR submissions</span><span><b class="mono">'+cur.reworks+'</b>&nbsp;corrections requested</span></div></div>'+
+  '<div class="stcard"><div class="lab">MFR and rework · counted even when the task ended up submitted</div><div class="stkey"><span><b class="mono">'+cur.mfrTasks+'</b>&nbsp;of '+cur.n+' tasks went through the MFR</span><span><b class="mono">'+cur.mfrSubs+'</b>&nbsp;MFR submissions</span><span><b class="mono">'+cur.reworks+'</b>&nbsp;corrections requested</span></div>'+(function(){var n=allTasks().filter(mfrCand).length;return n?'<div class="row"><span class="hint">'+n+' older submitted task'+(n===1?'':'s')+' ended below the target with no MFR on record.</span><button class="btn sm pri" data-a="tvMfrReview">Review them</button></div>':''})()+'</div>'+
   '<div class="stcard"><div class="lab">Open loops</div><div class="stkey"><span><b class="mono">'+evNeed+'</b>&nbsp;real-app evidence missing</span><span><b class="mono">'+fixTodo+'</b>&nbsp;rework fixes to do</span><span><b class="mono">'+held+'</b>&nbsp;tasks held 2+ days</span><span><b class="mono">'+cur.stuck+'</b>&nbsp;tasks past 2:00 with under 5 found, not released</span></div></div>'+
   '<div class="stcard"><div class="lab">By app · tasks you worked to the end</div>'+(rows.length?'<div class="tvlist"><div class="tvrow sthead"><span>App</span><span>Tasks</span><span>Reached</span><span>Logged / target</span><span>Avg time</span></div>'+rows.slice(0,15).map(function(r){return'<div class="tvrow strow"><span class="tvmain"><b>'+esc(r.app)+'</b></span><span class="mono">'+r.n+'</span><span class="mono">'+r.reach+'/'+r.n+'</span><span class="mono">'+f1(r.logged)+' / '+f1(r.target)+'</span><span class="mono">'+hm(r.time)+'</span></div>'}).join('')+'</div>':'<p class="muted" style="margin:0">Nothing finished in this period yet.</p>')+'</div>'}
 function tvTasksHtml(){
@@ -1066,7 +1072,7 @@ function tvTasksHtml(){
     tvSel('status',TV.status,tvStatusOpts(),'Status')+tvSel('app',TV.app,tvAppOpts(),'App')+tvSel('range',TV.range,[['all','Any time'],['today','Last 24 hours'],['week','Last 7 days'],['month','Last 30 days']],'Claimed')+
     tvSel('sort',TV.sort,[['recent','Sort: recent activity'],['new','Newest claimed'],['old','Oldest claimed'],['app','App A–Z'],['found','Most found'],['logged','Most logged'],['time','Longest time'],['evidence','Most evidence needed']],'Sort')+
     '<label class="tvchk"><input type="checkbox" data-tk="need"'+(TV.need?' checked':'')+'> Evidence needed</label><label class="tvchk"><input type="checkbox" data-tk="mfr"'+(TV.mfr?' checked':'')+'> Went through MFR</label><button class="btn sm ghost" data-a="tvReset">Reset</button></div>'+
-    '<div class="hnums tvk">'+kpi(ts.length+'<small>/'+all.length+'</small>','Tasks shown')+kpi(ts.filter(function(t){return OPENST[t.status]}).length,'Open')+kpi(ts.filter(function(t){return t.status==='submitted'||t.status==='form'||t.status==='outdated'}).length,'Submitted')+kpi(sum(function(t){return counts(t).n}),'Logged')+kpi(sum(function(t){return realC(t).need}),'Evidence needed')+'</div>'+
+    (function(){var n=all.filter(mfrCand).length;if(!n&&!TV.cand)return'';return'<div class="banner"><span><b>'+n+' submitted task'+(n===1?'':'s')+' ended below the target with no MFR on record.</b> Older tasks did not track it. '+(TV.cand?'Showing them below.':'')+'</span>'+(TV.cand?'<button class="btn sm '+(TV.confirmMfr?'danger':'pri')+'" data-a="tvMfrAll">'+(TV.confirmMfr?'Confirm: record MFR on '+ts.length:'Record MFR on all '+ts.length+' shown')+'</button>'+(TV.confirmMfr?'<button class="btn sm ghost" data-a="tvMfrNo">Cancel</button>':'')+'<button class="btn sm ghost" data-a="tvReset">Show all</button>':'<button class="btn sm pri" data-a="tvMfrReview">Review them</button>')+'</div>'})()+'<div class="hnums tvk">'+kpi(ts.length+'<small>/'+all.length+'</small>','Tasks shown')+kpi(ts.filter(function(t){return OPENST[t.status]}).length,'Open')+kpi(ts.filter(function(t){return t.status==='submitted'||t.status==='form'||t.status==='outdated'}).length,'Submitted')+kpi(sum(function(t){return counts(t).n}),'Logged')+kpi(sum(function(t){return realC(t).need}),'Evidence needed')+'</div>'+
     (rows?'<div class="tvlist">'+rows+'</div>':'<p class="muted" style="margin:0">No tasks match these filters.</p>')}
 function tvFindsHtml(){
   var rows=tvFinds(),n=rows.length,shown=rows.slice(0,300);
@@ -1086,13 +1092,18 @@ function tvCsv(){
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='tasker-'+TV.tab+'-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)}
 document.addEventListener('click',function(ev){var b=ev.target.closest('[data-a]');if(!b)return;var a=b.dataset.a;
   if(a==='tv'){VIEW.mode='tasks';var sd=$('#side');if(sd)sd.classList.remove('open');render();var m=$('#main');if(m)m.scrollTop=0;return}
+  if(a==='mfrAdd'){var t0=cur();if(t0){markMfr(t0);saveTask(t0);render();toast('MFR recorded','Added to this task\'s history.','ok')}return}
+  if(a==='mfrDel'){var t1=cur();if(t1){unmarkMfr(t1);saveTask(t1);render()}return}
+  if(a==='tvMfrReview'){TV.tab='tasks';TV.cand=true;TV.status='all';TV.range='all';TV.q='';TV.need=false;TV.mfr=false;tvSave();VIEW.mode='tasks';render();return}
+  if(a==='tvMfrAll'){if(!TV.confirmMfr){TV.confirmMfr=true;render();return}TV.confirmMfr=false;var n=0;tvTasks().forEach(function(t){if(mfrCand(t)){markMfr(t);saveTask(t);n++}});TV.cand=false;tvSave();render();toast('MFR recorded',n+' task'+(n===1?'':'s')+' updated. Each has it in its history.','ok');return}
+  if(a==='tvMfrNo'){TV.confirmMfr=false;render();return}
   if(a==='tvBulkNo'){TV.confirmBulk=false;render();return}
   if(a==='tvClose'){VIEW.mode=cur()?'task':'empty';render();return}
   if(a==='tvTab'){TV.tab=b.dataset.tab;tvSave();render();return}
   if(a==='tvCsv'){tvCsv();return}
   if(a==='realScan'){var r=realScan();render();toast('Real-app scan',r.found?'Tagged '+r.found+' finding'+(r.found===1?'':'s')+' in '+r.tasks+' task'+(r.tasks===1?'':'s')+', oldest first. Filter by Evidence needed to review them.':'No new findings compare with the real app.','ok');return}
   if(a==='tvBulk'){if(!TV.confirmBulk){TV.confirmBulk=true;render();return}TV.confirmBulk=false;var bt={};tvFinds().forEach(function(r){if(r.f.real==='need'){r.f.real='done';r.f.u=Date.now();bt[r.t.id]=r.t}});Object.keys(bt).forEach(function(id){saveTask(bt[id])});render();toast('Updated','Marked as evidence added.','ok');return}
-  if(a==='tvReset'){if(TV.tab==='tasks'){TV.q='';TV.status='all';TV.range='all';TV.need=false;TV.mfr=false;TV.sort='recent'}else{TV.fq='';TV.ftype='all';TV.fprio='all';TV.fstatus='all';TV.freal='all';TV.fts='all';TV.fsort='recent'}TV.app='all';tvSave();render();return}
+  if(a==='tvReset'){if(TV.tab==='tasks'){TV.q='';TV.status='all';TV.range='all';TV.need=false;TV.mfr=false;TV.cand=false;TV.confirmMfr=false;TV.sort='recent'}else{TV.fq='';TV.ftype='all';TV.fprio='all';TV.fstatus='all';TV.freal='all';TV.fts='all';TV.fsort='recent'}TV.app='all';tvSave();render();return}
   if(a==='fReset'){VIEW.fq='';VIEW.ftype='all';VIEW.fprio='all';VIEW.filter='all';render();return}
   if(a==='goF'){var tid=b.dataset.t,fid=b.dataset.id;openTask(tid);var tt=TASKS[tid],ff=tt&&findF(tt,fid);VIEW.filter=ff?ff.status:'all';VIEW.fq='';VIEW.ftype='all';VIEW.fprio='all';render();setTimeout(function(){var el=document.querySelector('.f[data-fid="'+fid+'"]');if(el){el.scrollIntoView({block:'center'});el.classList.add('flash');setTimeout(function(){el.classList.remove('flash')},1800)}},60);return}
 });
