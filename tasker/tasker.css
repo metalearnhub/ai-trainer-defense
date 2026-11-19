@@ -318,3 +318,9 @@ textarea.in{resize:vertical}
 .addbar{align-items:end}
 textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padding-top:9px;padding-bottom:9px;white-space:pre-wrap;overflow-wrap:anywhere;display:block;width:100%}
 .f textarea{overflow-wrap:anywhere}
+
+.realtog{white-space:nowrap}
+.realtog[aria-pressed="true"]{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.rbadge{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:600}
+.addbar{grid-template-columns:auto auto minmax(0,1fr) auto}
+@media (max-width:900px){.addbar{grid-template-columns:1fr}}
