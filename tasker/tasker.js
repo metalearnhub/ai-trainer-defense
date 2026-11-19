@@ -993,9 +993,46 @@ function tvFinds(){
   var T=function(r){return r.f.u||r.f.createdAt||0},S={recent:function(a,b){return T(b)-T(a)},'new':function(a,b){return(b.f.createdAt||0)-(a.f.createdAt||0)},old:function(a,b){return(a.f.createdAt||0)-(b.f.createdAt||0)},app:function(a,b){return String(a.t.app).localeCompare(String(b.t.app))||T(b)-T(a)},prio:function(a,b){return(PRO[fPrio(a.f)]==null?9:PRO[fPrio(a.f)])-(PRO[fPrio(b.f)]==null?9:PRO[fPrio(b.f)])||T(b)-T(a)},type:function(a,b){return String(fType(a.f)).localeCompare(String(fType(b.f)))||T(b)-T(a)},status:function(a,b){var o={progress:0,draft:1,done:2};return o[a.f.status]-o[b.f.status]||T(b)-T(a)},evidence:function(a,b){var o={need:0,done:1};return(o[a.f.real]==null?2:o[a.f.real])-(o[b.f.real]==null?2:o[b.f.real])||T(b)-T(a)}};
   return rows.sort(S[TV.fsort]||S.recent)}
 function tvHtml(){
-  var tabs='<div class="seg" role="group" aria-label="View">'+[['tasks','Tasks'],['finds','Findings']].map(function(x){return'<button type="button" class="all" data-a="tvTab" data-tab="'+x[0]+'" aria-pressed="'+(TV.tab===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>';
-  var head='<div class="row"><h1 style="margin:0;font-size:22px">All tasks &amp; findings</h1><span class="sp"></span>'+tabs+'<button class="btn sm" data-a="realScan" title="Find findings whose rubric compares with the real app and tag them, oldest tasks first">Scan for real-app</button><button class="btn sm" data-a="tvCsv">Export CSV</button><button class="btn sm ghost" data-a="tvClose">Back</button></div>';
-  return'<div class="wrap lib"><div class="card tvcard">'+head+(TV.tab==='tasks'?tvTasksHtml():tvFindsHtml())+'</div></div>'}
+  var tabs='<div class="seg" role="group" aria-label="View">'+[['tasks','Tasks'],['finds','Findings'],['stats','Stats']].map(function(x){return'<button type="button" class="all" data-a="tvTab" data-tab="'+x[0]+'" aria-pressed="'+(TV.tab===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>';
+  var head='<div class="row"><h1 style="margin:0;font-size:22px">All tasks &amp; findings</h1><span class="sp"></span>'+tabs+'<button class="btn sm" data-a="realScan" title="Find findings whose rubric compares with the real app and tag them, oldest tasks first">Scan for real-app</button>'+(TV.tab==='stats'?'':'<button class="btn sm" data-a="tvCsv">Export CSV</button>')+'<button class="btn sm ghost" data-a="tvClose">Back</button></div>';
+  return'<div class="wrap lib"><div class="card tvcard">'+head+(TV.tab==='tasks'?tvTasksHtml():TV.tab==='stats'?tvStatsHtml():tvFindsHtml())+'</div></div>'}
+/* ---------- stats tab: how the work is going ---------- */
+function med(a){a=a.filter(function(x){return isFinite(x)}).sort(function(x,y){return x-y});if(!a.length)return null;var m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2}
+function avgOf(a){a=a.filter(function(x){return isFinite(x)});return a.length?a.reduce(function(x,y){return x+y},0)/a.length:null}
+var CLOSED={submitted:1,form:1,outdated:1,unclaimed:1,released:1},RELEASED={unclaimed:1,released:1};
+function stWin(from,to){return allTasks().filter(function(t){return t.createdAt>=from&&t.createdAt<to})}
+function stCalc(ts){
+  var closed=ts.filter(function(t){return CLOSED[t.status]}),worked=closed.filter(function(t){return!RELEASED[t.status]}),rel=closed.filter(function(t){return RELEASED[t.status]});
+  var logs=[],gaps=[],found=0,secs=0;
+  ts.forEach(function(t){var fs=(t.findings||[]).slice().sort(function(a,b){return(a.at||0)-(b.at||0)});found+=counts(t).all;secs+=elapsed(t);
+    fs.forEach(function(f,i){if(i&&f.at!=null&&fs[i-1].at!=null)gaps.push(f.at-fs[i-1].at);if(f.status==='done'&&f.startAt!=null&&f.doneAt!=null&&f.doneAt>=f.startAt)logs.push(f.doneAt-f.startAt)})});
+  var reach=worked.filter(function(t){return counts(t).n>=tgt(t)});
+  return{n:ts.length,open:ts.filter(function(t){return!CLOSED[t.status]}),closed:closed,worked:worked,rel:rel,reach:reach,
+    byOut:{sub:ts.filter(function(t){return t.status==='submitted'||t.status==='outdated'}).length,mfr:ts.filter(function(t){return t.status==='mfr'||t.status==='form'}).length,rework:ts.filter(function(t){return t.status==='rework'}).length,rel:rel.length,open:ts.filter(function(t){return t.status==='active'}).length},
+    avgLogged:avgOf(worked.map(function(t){return counts(t).n})),avgTarget:avgOf(worked.map(tgt)),avgTime:avgOf(worked.map(elapsed)),
+    perHour:secs>600?found/(secs/3600):null,gap:med(gaps),logT:med(logs),
+    relMed:med(rel.map(elapsed)),relEarly:rel.filter(function(t){return elapsed(t)<=1800}).length,relMid:rel.filter(function(t){return elapsed(t)>1800&&elapsed(t)<=7200}).length,relLate:rel.filter(function(t){return elapsed(t)>7200}).length,
+    stuck:ts.filter(function(t){return!RELEASED[t.status]&&elapsed(t)>=7200&&counts(t).all<5&&t.status!=='active'}).length}}
+function stDelta(cur,prev,lowerBetter,fmt){if(cur==null||prev==null)return'';var d=cur-prev;if(Math.abs(d)<(Math.abs(prev)*.02))return'<small class="muted"> · same as before</small>';var good=lowerBetter?d<0:d>0;return'<small class="'+(good?'dg':'db')+'"> · '+(d>0?'▲ ':'▼ ')+fmt(Math.abs(d))+' vs previous</small>'}
+function tvStatsHtml(){
+  var days={week:7,month:30,all:0}[TV.srange||'month'],now=Date.now(),cur=stCalc(days?stWin(now-days*864e5,now+1):allTasks()),prev=days?stCalc(stWin(now-2*days*864e5,now-days*864e5)):null;
+  var f1=function(x){return x==null?'—':(Math.round(x*10)/10).toString()},tile=function(v,l,sub){return'<div class="stt"><b class="mono">'+v+'</b><span>'+l+'</span>'+(sub?'<em>'+sub+'</em>':'')+'</div>'};
+  var o=cur.byOut,tot=Math.max(1,o.sub+o.mfr+o.rework+o.rel+o.open),bar=function(n,c,l){return n?'<i class="'+c+'" style="flex:'+n+'" title="'+l+' · '+n+'"></i>':''};
+  var reachPct=cur.worked.length?Math.round(cur.reach.length/cur.worked.length*100):null;
+  var apps={};cur.worked.forEach(function(t){var k=appKey(t.app);(apps[k]=apps[k]||{app:t.app,t:[]}).t.push(t)});
+  var rows=Object.keys(apps).map(function(k){var a=apps[k],ts=a.t,r=ts.filter(function(t){return counts(t).n>=tgt(t)}).length;return{app:a.app,n:ts.length,reach:r,logged:avgOf(ts.map(function(t){return counts(t).n})),target:avgOf(ts.map(tgt)),time:avgOf(ts.map(elapsed))}}).sort(function(a,b){return b.n-a.n||String(a.app).localeCompare(String(b.app))});
+  var allT=allTasks(),fixTodo=0,evNeed=0,held=0;allT.forEach(function(t){fixTodo+=(t.findings||[]).filter(function(f){return f.fix==='todo'}).length;evNeed+=realC(t).need;if(t.status==='active'&&(now-t.createdAt)/864e5>=2)held++});
+  var note=cur.worked.length<10?'<p class="hint" style="margin:0">Only '+cur.worked.length+' finished task'+(cur.worked.length===1?'':'s')+' in this window, so treat the averages as rough. They firm up around 20.</p>':'';
+  return'<div class="tvfilters">'+tvSel('srange',TV.srange||'month',[['week','Last 7 days'],['month','Last 30 days'],['all','All time']],'Period')+'<span class="hint">'+cur.n+' task'+(cur.n===1?'':'s')+' claimed · '+cur.closed.length+' closed · '+cur.open.length+' open</span></div>'+note+
+  '<div class="stgrid">'+tile(reachPct==null?'—':reachPct+'%','Reached the target',cur.reach.length+' of '+cur.worked.length+' worked tasks (app average, or 30)')+
+    tile(f1(cur.avgLogged)+'<small> / '+f1(cur.avgTarget)+'</small>','Avg logged / target',prev?stDelta(cur.avgLogged,prev.avgLogged,false,f1):'')+
+    tile(cur.avgTime==null?'—':hm(cur.avgTime),'Avg time per worked task','AHT 4:30')+
+    tile(cur.perHour==null?'—':f1(cur.perHour),'Findings found per hour','all tasks in this period')+
+    tile(cur.gap==null?'—':mmss(cur.gap),'Typical gap between findings',cur.logT==null?'':'log one in '+mmss(cur.logT)+(prev?stDelta(cur.logT,prev.logT,true,mmss):''))+
+    tile(cur.relMed==null?'—':hm(cur.relMed),'Typical release time',cur.rel.length+' released · '+cur.relEarly+' by 0:30 · '+cur.relMid+' by 2:00 · '+cur.relLate+' after 2:00')+'</div>'+
+  '<div class="stcard"><div class="lab">Outcomes</div><div class="stbar">'+bar(o.sub,'ok','Submitted')+bar(o.mfr,'warn','MFR')+bar(o.rework,'info','Rework')+bar(o.rel,'crit','Released')+bar(o.open,'mute','In progress')+'</div><div class="stkey"><span><i class="ok"></i>Submitted '+o.sub+'</span><span><i class="warn"></i>MFR '+o.mfr+'</span><span><i class="info"></i>Rework '+o.rework+'</span><span><i class="crit"></i>Released '+o.rel+'</span><span><i class="mute"></i>In progress '+o.open+'</span></div></div>'+
+  '<div class="stcard"><div class="lab">Open loops</div><div class="stkey"><span><b class="mono">'+evNeed+'</b>&nbsp;real-app evidence missing</span><span><b class="mono">'+fixTodo+'</b>&nbsp;rework fixes to do</span><span><b class="mono">'+held+'</b>&nbsp;tasks held 2+ days</span><span><b class="mono">'+cur.stuck+'</b>&nbsp;tasks past 2:00 with under 5 found, not released</span></div></div>'+
+  '<div class="stcard"><div class="lab">By app · tasks you worked to the end</div>'+(rows.length?'<div class="tvlist"><div class="tvrow sthead"><span>App</span><span>Tasks</span><span>Reached</span><span>Logged / target</span><span>Avg time</span></div>'+rows.slice(0,15).map(function(r){return'<div class="tvrow strow"><span class="tvmain"><b>'+esc(r.app)+'</b></span><span class="mono">'+r.n+'</span><span class="mono">'+r.reach+'/'+r.n+'</span><span class="mono">'+f1(r.logged)+' / '+f1(r.target)+'</span><span class="mono">'+hm(r.time)+'</span></div>'}).join('')+'</div>':'<p class="muted" style="margin:0">Nothing finished in this period yet.</p>')+'</div>'}
 function tvTasksHtml(){
   var all=allTasks(),ts=tvTasks(),sum=function(f){return ts.reduce(function(a,t){return a+f(t)},0)};
   var kpi=function(n,l){return'<div><b class="mono">'+n+'</b><span>'+l+'</span></div>'};
