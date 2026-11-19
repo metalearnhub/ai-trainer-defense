@@ -324,3 +324,25 @@ textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padd
 .rbadge{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:600}
 .addbar{grid-template-columns:auto auto minmax(0,1fr) auto}
 @media (max-width:900px){.addbar{grid-template-columns:1fr}}
+
+.fbar{gap:8px;flex-wrap:wrap;align-items:center}
+.fbar #fq{flex:1;min-width:160px}
+.tvsel{width:auto;max-width:210px}
+.tvfilters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tvfilters .in:not(select){flex:1 1 240px;min-width:180px}
+.tvchk{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+.tvk{margin:2px 0}
+.tvlist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tvrow{display:grid;grid-template-columns:minmax(160px,2.2fr) auto 56px 60px minmax(120px,1fr) minmax(100px,auto) 54px;gap:10px;align-items:center;text-align:left;padding:10px 12px;border:0;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;width:100%}
+.tvrow:last-child{border-bottom:0}
+.tvrow:hover,.tvrow:focus-visible{background:var(--accent-soft)}
+.tvrow.tvf{grid-template-columns:minmax(200px,3fr) auto 60px 96px minmax(110px,auto)}
+.tvmain{display:flex;flex-direction:column;min-width:0;gap:2px}
+.tvmain b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.tvmain small{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tvn{font-size:12.5px;white-space:nowrap}
+.f.flash{animation:fflash 1.8s ease}
+@keyframes fflash{0%,60%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (max-width:900px){.tvrow,.tvrow.tvf{grid-template-columns:1fr auto}.tvrow .tvn{display:none}.tvrow.tvf .tvn:nth-of-type(-n+3){display:inline}}
+
+.f.realneed{border-left:4px solid var(--warn);background:var(--warn-soft)}
