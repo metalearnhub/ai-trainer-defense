@@ -938,7 +938,7 @@ setInterval(function(){if(SESSION&&!sessOk())signOutLocal('Your sign-in expired.
 function authScreen(){
   var a=VIEWAUTH;
   return'<div class="gate-wrap"><form class="card form" id="authForm" autocomplete="on"><div class="brand" style="padding:0">'+LOGO+'<div><b>AI Trainer Tasker</b><span class="lab">Private · one-time device PIN</span></div></div>'+
-  '<p class="hint" style="margin:0">Enter your 6-digit PIN once. This device then stays signed in for a year.</p><label for="aCode">PIN<input class="in mono" id="aCode" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" required style="font-size:22px;letter-spacing:.3em"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Checking…':'Open Tasker')+'</button></div>'+
+  '<p class="hint" style="margin:0">Open the Tasker from your CRM to sign in automatically, or enter your 6-digit PIN once. This device then stays signed in.</p><label for="aCode">PIN<input class="in mono" id="aCode" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" required style="font-size:22px;letter-spacing:.3em"></label><p class="hint err" id="aErr">'+esc(a.err)+'</p><div class="row"><button class="btn pri" type="submit"'+(a.busy?' disabled':'')+'>'+(a.busy?'Checking…':'Open Tasker')+'</button></div>'+
   '</form></div>';
 }
 function authSubmit(){
@@ -948,8 +948,14 @@ function authSubmit(){
   api({action:'verify',email:'dijaedadula@gmail.com',code:code},false).then(function(d){a.busy=false;SESSION={token:d.token,expires_at:d.expires_at,email:d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','This device stays signed in for a year.','ok');pull(true)})
   .catch(function(e){a.busy=false;a.err=e.message;render();var c=$('#aCode');if(c)c.focus()});
 }
-
-render();initCloud();checkGates();
+var SSO_URL='https://qbubwemdvwflxvxwesrl.supabase.co/functions/v1/sso';
+function ssoBoot(){var m=/[#&]sso=([0-9a-f]{64})/.exec(location.hash);if(!m)return;
+  try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+  if(sessOk())return;
+  VIEWAUTH.busy=true;
+  fetch(SSO_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'redeem',app:'tasker',pass:m[1]})}).then(function(r){return r.json().catch(function(){return{}}).then(function(d){return{ok:r.ok,d:d}})}).then(function(x){VIEWAUTH.busy=false;if(!x.ok||!x.d.token)throw new Error(x.d.error||'Sign-in failed. Enter your PIN.');SESSION={token:x.d.token,expires_at:x.d.expires_at,email:x.d.email};lsSet('session',SESSION);VIEW.mode=cur()?'task':'empty';render();toast('Signed in','Opened from your CRM.','ok');pull(true)}).catch(function(e){VIEWAUTH.busy=false;VIEWAUTH.err=e.message;render()});
+}
+ssoBoot();render();initCloud();checkGates();
 var boot=document.getElementById('bootMsg');if(boot)boot.remove();
 /* draft box: grows with what you type; Enter adds, Shift+Enter breaks the line */
 document.addEventListener('input',function(ev){if(ev.target.id==='addIn')grow(ev.target)});
