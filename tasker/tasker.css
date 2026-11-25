@@ -368,3 +368,6 @@ textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padd
 .thist .hlist li::before{content:"";position:absolute;left:-20px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
 .thist .hlist li span{color:var(--muted);font-size:12px}
 .rbadge.mb{background:var(--accent-soft);color:var(--accent);margin-right:4px}
+
+.tgt.cp.warn b{color:var(--warn,#B45309)}
+.tgt.cp.ok b{color:var(--ok)}
