@@ -393,3 +393,10 @@ textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padd
 .pcell b.ok,.pcell b.dg{color:var(--ok)}.pcell b.warn{color:var(--warn)}.pcell b.crit,.pcell b.db{color:var(--crit)}
 @media (max-width:760px){.hclock b{font-size:40px}.tvcard .seg{flex:1 1 100%;overflow-x:auto}.tvcard .seg button{flex:1 0 auto;padding:8px 10px}}
 .ptask small{white-space:normal!important}
+
+.mobfab{display:none}
+@media (max-width:760px){
+  .mobfab{display:inline-flex;position:fixed;left:12px;bottom:14px;z-index:35;min-height:44px;padding:0 16px;border-radius:22px;background:var(--accent);color:var(--bg);font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+  .side.open~*,.app:has(.side.open) .mobfab{display:none}
+  .wrap{padding-bottom:84px}
+}
