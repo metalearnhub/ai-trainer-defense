@@ -1,6 +1,27 @@
 {
   "trailingSlash": true,
   "redirects": [
-    { "source": "/", "has": [{ "type": "host", "value": "tasker.dijaedadula.com" }], "destination": "/tasker/", "permanent": false }
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "tasker.dijaedadula.com"
+        }
+      ],
+      "destination": "/tasker/",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/tasker/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    }
   ]
 }
