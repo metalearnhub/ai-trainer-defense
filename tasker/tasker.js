@@ -110,8 +110,8 @@ function nextStep(t){
 }
 var GATES=[
   {id:'g30',m:30,t:'0:30',l:'Release check · can it reach the target?'},
-  {id:'g110',m:110,t:'1:50',l:'10 min to the 2:00 checkpoint · 10 found?'},
-  {id:'g120',m:120,t:'2:00',l:'Checkpoint · under 10 found → log the release and release'},
+  {id:'g110',m:110,t:'1:50',l:'10 min to the 2:00 checkpoint · 10 logged?'},
+  {id:'g120',m:120,t:'2:00',l:'Checkpoint · under 10 logged → log the release and release'},
   {id:'g240',m:240,t:'4:00',l:'30 min left · target reached? check the mix'},
   {id:'g255',m:255,t:'4:15',l:'Wrap up · Runtime Quality'},
   {id:'g265',m:265,t:'4:25',l:'5 min to 4:30'},
@@ -122,7 +122,7 @@ function gatesNow(){return triOn()?GATES:GATES.filter(function(g){return g.id!==
 var STAGES_NOTRI=null;function stagesNow(){if(triOn())return STAGES;if(!STAGES_NOTRI){var h=STAGES[1];STAGES_NOTRI=[{id:'hunt',a:0,b:h.b,n:h.n,d:h.d}].concat(STAGES.slice(2))}return STAGES_NOTRI}
 
 function gateMessage(t,g){
-  var c=counts(t),n=c.all,T=tgt(t),tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs · target '+T+')',R=c.n>=T||c.n>=30;
+  var c=counts(t),n=c.n,T=tgt(t),tail=' ('+c.all+' found · '+c.n+' logged · '+c.b+' Bugs · '+c.fr+' FRs · target '+T+')',R=c.n>=T||c.n>=30;
   if(g.id==='g30')return'0:30 is the ideal time to decide. Can this app reach its target ('+T+')? If clearly not (broken, unstable, too few workflows), log an early release in Review Desk, then unclaim in Feather. No rating or tags.'+tail;
   if(g.id==='g110')return(n>=10?'You have 10+, so the 2:00 checkpoint is clear. Keep building toward '+T+'.':'10 minutes to 2:00 and under 10 found. Below the target with under 10 at 2:00, you release. Push on the main workflows now, or release early.')+tail;
   if(g.id==='g120')return(R?'Target reached. Log it in Review Desk and submit in Feather, or push toward 30.':n<10?'Under 10 at 2:00: click Log the release in Review Desk, then release in Feather.':'Checkpoint clear (10+). Keep building toward '+T+' (goal 30) until 4:30.')+tail;
@@ -143,10 +143,13 @@ function dupHtml(d){if(!d)return'';var first=String(d.f.text||'').split('\n')[0]
 
 /* ---------- notifications & sound ---------- */
 var AC=null;
-function beep(){if(!IDX.settings.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();[0,.18].forEach(function(d,i){var o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=i?880:660;g.gain.setValueAtTime(.0001,AC.currentTime+d);g.gain.exponentialRampToValueAtTime(.2,AC.currentTime+d+.02);g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d+.16);o.connect(g).connect(AC.destination);o.start(AC.currentTime+d);o.stop(AC.currentTime+d+.18)})}catch(e){}}
+function tone(fr,d,len,type,vol){var o=AC.createOscillator(),g=AC.createGain();o.type=type||'sine';o.frequency.value=fr;g.gain.setValueAtTime(.0001,AC.currentTime+d);g.gain.exponentialRampToValueAtTime(vol||.2,AC.currentTime+d+.02);g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d+len);o.connect(g).connect(AC.destination);o.start(AC.currentTime+d);o.stop(AC.currentTime+d+len+.02)}
+/* Checkpoint sounds you can tell apart by ear: go = rising three notes (on track / target reached) · under = falling two low notes, twice (under quantity: release) · lfs = three low pulses (4:30 below target) · warn = the old two-note beep */
+var SND={go:[[523,0,.16],[659,.17,.16],[784,.34,.3]],under:[[440,0,.22],[277,.24,.3],[440,.7,.22],[277,.94,.3]],lfs:[[196,0,.2],[196,.3,.2],[196,.6,.35]],warn:[[660,0,.16],[880,.18,.16]]};
+function beep(kind){if(!IDX.settings.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();var k=kind&&SND[kind]?kind:'warn';SND[k].forEach(function(x){tone(x[0],x[1],x[2],k==='go'?'triangle':k==='warn'?'sine':'square',k==='go'||k==='warn'?.2:.12)})}catch(e){}}
 function notifyOk(){return 'Notification' in window&&Notification.permission==='granted'&&IDX.settings.notify}
-function alertUser(t,title,body,tone){
-  toast(title,body,tone||'warn',t.id);beep();
+function alertUser(t,title,body,tone,snd){
+  toast(title,body,tone||'warn',t.id);beep(snd);
   if(notifyOk()){try{var n=new Notification(title,{body:body,tag:'cst-'+t.id+'-'+title,requireInteraction:true});n.onclick=function(){window.focus();IDX.cur=t.id;saveIdx();render();n.close()}}catch(e){}}
 }
 function askPermission(){
@@ -155,12 +158,18 @@ function askPermission(){
     if(p==='granted'){try{new Notification('AI Trainer Tasker reminders are on',{body:'You\'ll get a desktop alert at each gate: 0:35, 0:45, 1:50, 2:00, 4:00, 4:15, 4:25 and 4:30.'})}catch(e){}}
     else toast('Notifications blocked','Allow notifications for this site in Chrome\'s address bar (the icon left of the URL), then try again.','warn')})
 }
+function gateSound(t,g){var c=counts(t),T=tgt(t),n=c.n,R=n>=T||n>=30;
+  if(g.id==='g30'){var m=Math.max(1,elapsed(t)/60);return n/m*270>=T?'go':'under'}
+  if(g.id==='g110'||g.id==='g120')return R||n>=10?'go':'under';
+  if(g.id==='g240'||g.id==='g265')return R?'go':'warn';
+  if(g.id==='g270')return R?'go':'lfs';
+  return'warn'}
 function checkGates(){
   if(!sessOk())return;
   allTasks().forEach(function(t){
     if(t.status!=='active'||!running(t))return;
     t.fired=t.fired||{};var m=elapsed(t)/60,changed=false;
-    gatesNow().forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn')}});
+    gatesNow().forEach(function(g){if(m>=g.m&&!t.fired[g.id]){t.fired[g.id]=1;changed=true;if(m<g.m+10)alertUser(t,g.t+' · '+t.app+' · '+g.l,gateMessage(t,g),g.m>=255||g.id==='g45'?'crit':'warn',gateSound(t,g))}});
     var c=counts(t),es=elapsed(t);
     if((m>=45||t.huntDone)&&c.n<30){var pr=oldestProg(t),M=metrics(t);
       if(pr){var spent=(es-(pr.startAt||es))/60;if(spent>=M.target&&!pr.w1){pr.w1=1;changed=true;alertUser(t,'Over budget · '+first(pr),'You\'ve spent '+mmss(spent*60)+' on it; budget is '+mmss(M.target*60)+'. Wrap it up and mark it Done. Stuck? Mark why on the finding: Flow slow, recording, Flow validation or environment.','warn')}else if(spent>=2*M.target&&!pr.w2){pr.w2=1;changed=true;alertUser(t,'Still on “'+first(pr)+'”','Twice the budget. Can\'t move forward? Mark why on the finding (Flow slow, recording, Flow validation, environment), or park it and start the next draft.','warn')}}
@@ -200,7 +209,7 @@ function sideHtml(){
   return'<aside class="side" id="side"><button class="btn sm ghost sidecollapse" data-a="collapse" aria-label="Hide task list">«</button><div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>AI Trainer Tasker</b><span class="lab">AHT 4:30 · 30 findings</span></div></div>'+
   '<div class="search"><button class="btn pri" data-a="new" style="width:100%;justify-content:center;margin-bottom:8px">New task</button><button class="btn" data-a="tv" aria-current="'+(VIEW.mode==='tasks')+'" style="width:100%;justify-content:center;margin-bottom:8px">All tasks &amp; findings · '+allTasks().length+'</button><button class="btn" data-a="lib" aria-current="'+(VIEW.mode==='lib')+'" style="width:100%;justify-content:center;margin-bottom:8px">Rubric library · '+allRubrics().length+'</button><button class="btn ghost" data-a="guide" aria-current="'+(VIEW.mode==='guide')+'" style="width:100%;justify-content:center;margin-bottom:8px">Guide · rules &amp; workflow</button><input class="in" id="tq" data-in="q" placeholder="Search tasks and findings" value="'+esc(VIEW.q)+'" aria-label="Search tasks and findings"></div>'+
   '<nav class="tlist" aria-label="Tasks">'+(act.length?'<div class="tgroup lab">Active</div>'+act.map(item).join(''):'')+(hist.length?'<div class="tgroup lab">History · '+hist.length+'</div>'+hist.map(item).join(''):'')+(!ts.length?'<p class="muted" style="padding:8px 10px;margin:0;font-size:13px">'+(q?'Nothing matches.':'No tasks yet.')+'</p>':'')+'</nav>'+
-  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="focusOn"'+(IDX.settings.full?'':' checked')+'> Focus view (simple panel)</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
+  '<div class="sidefoot"><span class="synclab" id="syncLab"></span><button class="btn sm" data-a="notify">'+notif+'</button><button class="btn sm ghost" data-a="sndTest" title="Hear the checkpoint sounds">Hear checkpoint sounds</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="snd" data-in="sound"'+(IDX.settings.sound?' checked':'')+'> Sound with each alert</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="tipsOn"'+(IDX.settings.noTips?'':' checked')+'> Show tooltips</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="focusOn"'+(IDX.settings.full?'':' checked')+'> Focus view (simple panel)</label><div class="row"><button class="btn sm" data-a="export">Export backup</button><button class="btn sm ghost" data-a="signout">Sign out</button><label class="btn sm" for="imp">Import</label><input type="file" id="imp" accept="application/json" hidden></div></div></aside>';
 }
 function emptyHtml(){return'<div class="card empty"><h1 style="margin:0;font-size:22px">Start a task</h1><p class="muted" style="margin:0;max-width:56ch">Paste the Feather link, match the clock to Hubstaff, and log findings as you hunt. Every character saves as you type. Desktop reminders tell you what to do at 0:35, 0:45, 2:00 and 4:30.</p><button class="btn pri" data-a="new">New task</button></div>'}
 function newHtml(){
@@ -316,6 +325,7 @@ document.addEventListener('click',function(ev){
   if(a==='cancelNew'){VIEW.mode=cur()?'task':'empty';render();return}
   if(a==='open'){openTask(b.dataset.id);return}
   if(a==='menu'){var sd=$('#side');if(sd)sd.classList.toggle('open');return}
+  if(a==='sndTest'){var seq=[['go','Rising three notes: on track or target reached'],['under','Falling low notes, twice: under quantity, release'],['lfs','Three low pulses: 4:30 below target, submit with an LFS']],ix=0;(function nx(){if(ix>=seq.length)return;var q=seq[ix++];toast('Sound '+ix+' of 3',q[1],q[0]==='go'?'ok':'warn');var was=IDX.settings.sound;IDX.settings.sound=true;beep(q[0]);IDX.settings.sound=was;setTimeout(nx,2600)})();return}
   if(a==='notify'){askPermission();return}
   if(a==='export'){exportData();return}
   if(a==='rdLog'&&t){t.rd=t.rd?0:Date.now();saveTask(t);render();return}
@@ -864,8 +874,8 @@ function tgtStrip0(t){var T=tgt(t);
   return hasAvg(t)?'<div class="tgt"><span class="lab">Target</span><b class="mono">'+T+'</b><span>app target · goal 30</span><span class="sp"></span><button class="btn sm ghost" data-a="avgEdit">Change</button></div>'
   :'<div class="tgt none"><span class="lab">Target</span><b class="mono">30</b><span>no target set · default 30</span><span class="sp"></span><button class="btn sm" data-a="avgEdit">Set app target</button></div>'}
 function hudHtml(t){return'<div class="hud heat-'+heatOf(t).cls+'" id="hud">'+hudInner(t)+'</div>'}
-function hruleHtml(t){var s=nextStep(t),h=heatOf(t),F=counts(t).all;
-  if(t.status==='active'&&h.nx===120&&h.left<=15){var w=F<10?'under 10 → log the release and release':'10+ → keep going';return'<div class="hrule '+(F<10?'warn':'ok')+'" id="hrule" data-tip="2:00 checkpoint: under 10 found → log the release in Review Desk and release · 10+ → keep testing until the target or 4:30."><b>2:00 checkpoint · '+F+' found: '+w+'</b></div>'}
+function hruleHtml(t){var s=nextStep(t),h=heatOf(t),F=counts(t).n;
+  if(t.status==='active'&&h.nx===120&&h.left<=15){var w=F<10?'under 10 → log the release and release':'10+ → keep going';return'<div class="hrule '+(F<10?'warn':'ok')+'" id="hrule" data-tip="2:00 checkpoint: under 10 found → log the release in Review Desk and release · 10+ → keep testing until the target or 4:30."><b>2:00 checkpoint · '+F+' logged: '+w+'</b></div>'}
   if(/^(On pace for|Behind pace by|Well behind pace)/.test(s.h))return'<div id="hrule" hidden></div>';
   return'<div class="hrule '+s.tone+'" id="hrule" data-tip="'+esc(s.p)+'"><b>'+esc(s.h)+'</b></div>'}
 function focusPanel(t,parts){
