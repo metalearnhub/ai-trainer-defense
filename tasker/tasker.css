@@ -210,7 +210,8 @@ textarea.in{resize:vertical}
 .tright .mcount div{align-items:flex-end}
 .tright .clockcard{grid-template-columns:1fr}
 .tright .clockcard>div:first-child{display:none}
-.side{position:relative}
+@media (min-width:761px){.side{position:relative}}
+@media (max-width:760px){.sidecollapse{display:none}}
 .sidecollapse{position:absolute;top:12px;right:8px}
 .app.noside{grid-template-columns:minmax(0,1fr)}
 .app.noside .side{display:none}
@@ -371,3 +372,24 @@ textarea.addta{resize:none;overflow:hidden;min-height:40px;line-height:1.45;padd
 
 .tgt.cp.warn b{color:var(--warn,#B45309)}
 .tgt.cp.ok b{color:var(--ok)}
+
+/* Phone: clock and checkpoint first, one-line strips after, thumb-sized buttons */
+@media (max-width:760px){
+  .rtop{gap:8px}.rtop>.ftitle{order:0}.rtop>.banner{order:1}.rtop>.hud{order:2}.rtop>.hrule{order:3}.rtop>.hctrl{order:4}.rtop>.tgt{order:5}.rtop>form{order:6}
+  .rtop>.tgt.cp{order:3}
+  .tgt{padding:6px 10px;gap:4px 8px;font-size:12px}.tgt b{font-size:15px}.tgt .btn{padding:3px 8px;font-size:12px}
+  .hud{padding:12px;gap:8px}.hud .clock,.hud .hclock{font-size:34px}
+  .ftitle{flex-wrap:wrap}.ftitle b{max-width:40vw}
+  .hctrl .btn{flex:1 1 auto;min-height:40px}
+  .btn{min-height:36px}
+  .stgrid{grid-template-columns:1fr 1fr}
+  .tvfilters{display:grid;grid-template-columns:1fr 1fr}.tvfilters .in:first-child{grid-column:1/-1}
+  .tvcard>.row{flex-wrap:wrap}
+}
+
+.ptips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13.5px;line-height:1.45}
+.pbar{display:grid;grid-template-columns:38px 1fr 34px;align-items:center;gap:8px;font-size:12px}.pbar i{display:block;height:10px;border-radius:5px;background:var(--accent)}.pbar b{text-align:right}
+.ptask{grid-template-columns:1fr 64px 76px!important}.pcell{display:flex;flex-direction:column;align-items:flex-end}.pcell em{font-style:normal;font-size:10.5px;color:var(--muted)}.pcell b{font-size:16px}.pcell b small{font-size:11px;color:var(--muted);font-weight:500}
+.pcell b.ok,.pcell b.dg{color:var(--ok)}.pcell b.warn{color:var(--warn)}.pcell b.crit,.pcell b.db{color:var(--crit)}
+@media (max-width:760px){.hclock b{font-size:40px}.tvcard .seg{flex:1 1 100%;overflow-x:auto}.tvcard .seg button{flex:1 0 auto;padding:8px 10px}}
+.ptask small{white-space:normal!important}
